@@ -1,18 +1,23 @@
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 
-import models
-from database import engine
-from routes import item
+from crud import create_crud_router
+from database import Base, engine
+from models import User, UserNFT, UserSocial
+from schemas import UserCreateSchema, UserSchema, UserNFTCreateSchema, UserNFTSchema, UserSocialCreateSchema, \
+    UserSocialSchema
 
-# Create database tables
-models.Base.metadata.create_all(bind=engine)
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
-# Include routers
-app.include_router(item.router)
+user_router = create_crud_router(model=User, schema_create=UserCreateSchema, schema_read=UserSchema)
+user_nft_router = create_crud_router(model=UserNFT, schema_create=UserNFTCreateSchema, schema_read=UserNFTSchema)
+user_social_router = create_crud_router(model=UserSocial, schema_create=UserSocialCreateSchema,
+                                        schema_read=UserSocialSchema)
 
+router = APIRouter()
+router.include_router(user_router)
+router.include_router(user_nft_router)
+router.include_router(user_social_router)
 
-@app.get("/")
-async def root():
-    return {"message": "Welcome to the FastAPI application with Neon DB"}
+app.include_router(router)

@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Index
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Index, ForeignKey
 from sqlalchemy.orm import Session, declared_attr
 
 from database import Base
@@ -9,15 +9,24 @@ from database import Base
 class BaseModelC(Base):
     __abstract__ = True
 
+    id = Column(Integer, primary_key=True, autoincrement=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     deleted = Column(Boolean, default=False, nullable=False)
 
     @declared_attr
     def __table_args__(cls):
+        if cls.__dict__.get('__abstract__', False):
+            return ()  # No table args for abstract base class
         return (
             Index(f"idx_{cls.__tablename__}_created_at", "created_at"),
             Index(f"idx_{cls.__tablename__}_deleted", "deleted"),
         )
+
+    def save(self, db: Session):
+        db.add(self)
+        db.commit()
+        db.refresh(self)
+        return self
 
     def delete(self, db: Session):
         """Soft delete the record"""
@@ -82,9 +91,11 @@ class BaseModelCU(BaseModelC):
 
     @declared_attr
     def __table_args__(cls):
+        if cls.__dict__.get('__abstract__', False):
+            return ()  # No table args for abstract base class
         return (
-            *BaseModelC.__table_args__.fget(cls),
-            Index(f"idx_{cls.__tablename__}_updated_at", "updated_at"),
+            Index(f"idx_{cls.__tablename__}_created_at", "created_at"),
+            Index(f"idx_{cls.__tablename__}_deleted", "deleted"),
         )
 
     def save(self, db: Session):
@@ -115,16 +126,25 @@ class BaseModelCU(BaseModelC):
         return self
 
 
-class Item(BaseModelC):
-    __tablename__ = "items"
+class User(BaseModelCU):
+    __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, index=True)
-    description = Column(String, nullable=True)
+    connected_address = Column(String, index=True)
+    key_count = Column(Integer, default=0)
 
-    def save(self, db: Session):
-        """Save the record without updated_at"""
-        db.add(self)
-        db.commit()
-        db.refresh(self)
-        return self
+
+class UserNFT(BaseModelC):
+    __tablename__ = "user_nft"
+
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    nft_collection = Column(String)
+    nft_id = Column(String)
+    used = Column(Boolean, default=False)
+
+
+class UserSocial(BaseModelC):
+    __tablename__ = "user_social"
+
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    platform = Column(String)
+    handle = Column(String)
