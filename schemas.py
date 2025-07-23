@@ -13,7 +13,7 @@ class BaseCreate(BaseModel):
 
 
 class UserCreateSchema(BaseCreate):
-    connected_address: str
+    wallet_address: str
     key_count: Optional[int] = 0
 
     class Config:
@@ -22,7 +22,7 @@ class UserCreateSchema(BaseCreate):
 
 class UserSchema(Base):
     id: int
-    connected_address: str
+    wallet_address: str
     key_count: int
     created_at: datetime
     updated_at: Optional[datetime]

@@ -129,7 +129,7 @@ class BaseModelCU(BaseModelC):
 class User(BaseModelCU):
     __tablename__ = "users"
 
-    connected_address = Column(String, index=True)
+    wallet_address = Column(String, index=True)
     key_count = Column(Integer, default=0)
 
 

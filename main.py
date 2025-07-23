@@ -1,23 +1,47 @@
-from fastapi import APIRouter, FastAPI
+from fastapi import FastAPI, APIRouter
+from fastapi.middleware.cors import CORSMiddleware
 
-from crud import create_crud_router
 from database import Base, engine
-from models import User, UserNFT, UserSocial
-from schemas import UserCreateSchema, UserSchema, UserNFTCreateSchema, UserNFTSchema, UserSocialCreateSchema, \
-    UserSocialSchema
+from routers.additional_endpoints import additional_router
+from routers.user_nft_router import user_nft_router
+from routers.user_router import user_router
+from routers.user_social_router import user_social_router
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI()
+# Initialize FastAPI app
+app = FastAPI(
+    title="Hii Box API",
+    description="API for managing users, their NFTs and social accounts",
+    version="1.0.0",
+)
 
-user_router = create_crud_router(model=User, schema_create=UserCreateSchema, schema_read=UserSchema)
-user_nft_router = create_crud_router(model=UserNFT, schema_create=UserNFTCreateSchema, schema_read=UserNFTSchema)
-user_social_router = create_crud_router(model=UserSocial, schema_create=UserSocialCreateSchema,
-                                        schema_read=UserSocialSchema)
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-router = APIRouter()
-router.include_router(user_router)
-router.include_router(user_nft_router)
-router.include_router(user_social_router)
+api_router = APIRouter(prefix="/api/v1")
 
-app.include_router(router)
+api_router.include_router(user_router)
+api_router.include_router(user_nft_router)
+api_router.include_router(user_social_router)
+api_router.include_router(additional_router)
+
+app.include_router(api_router)
+
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint."""
+    return {"status": "healthy", "version": "1.0.0"}
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="0.0.0.0", port=8000)
