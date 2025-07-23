@@ -16,11 +16,11 @@ def validate_unique_social_handle(db: Session, schema, exclude_id: int = None) -
     Raises:
         HTTPException: If social handle already exists
     """
-    if not (hasattr(schema, 'social_handle') and schema.social_handle):
+    if not (hasattr(schema, 'handle') and schema.handle):
         return
 
     query = db.query(UserSocial).filter(
-        UserSocial.handle == schema.social_handle,
+        UserSocial.handle == schema.handle,
         UserSocial.platform == getattr(schema, 'platform', None),
         UserSocial.deleted.is_(False)
     )
@@ -34,7 +34,7 @@ def validate_unique_social_handle(db: Session, schema, exclude_id: int = None) -
     if existing_social:
         raise HTTPException(
             status_code=409,
-            detail=f"Social handle '{schema.social_handle}' is already registered on {schema.platform}"
+            detail=f"Social handle '{schema.handle}' is already registered on {schema.platform}"
         )
 
 
