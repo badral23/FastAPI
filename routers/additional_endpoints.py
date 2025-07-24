@@ -125,7 +125,7 @@ async def get_user_keys_by_wallet(wallet_address: str, db: Session = Depends(get
 async def get_campaign_status(wallet_address: str, db: Session = Depends(get_db)):
     """Get user's Hii Box campaign status"""
     user = get_user_by_wallet_or_404(db, wallet_address)
-
+    print("sda")
     # Count user's NFTs
     nft_count = db.query(UserNFT).filter(
         UserNFT.user_id == user.id,
