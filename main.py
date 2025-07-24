@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from database import Base, engine
 from routers.additional_endpoints import additional_router
+from routers.auth_router import router as auth_router
 from routers.user_nft_router import user_nft_router
 from routers.user_router import user_router
 from routers.user_social_router import user_social_router
@@ -27,6 +28,7 @@ app.add_middleware(
 
 api_router = APIRouter(prefix="/api/v1")
 
+api_router.include_router(auth_router)
 api_router.include_router(user_router)
 api_router.include_router(user_nft_router)
 api_router.include_router(user_social_router)

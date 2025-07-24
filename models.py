@@ -1,7 +1,9 @@
 from datetime import datetime, timezone
-from database import Base
+
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Index, ForeignKey, JSON, Text
 from sqlalchemy.orm import Session, declared_attr
+
+from database import Base
 
 
 class BaseModelC(Base):
@@ -129,6 +131,7 @@ class User(BaseModelCU):
 
     wallet_address = Column(String, index=True)
     key_count = Column(Integer, default=0)
+    refresh_token = Column(String, nullable=True)
 
 
 class UserNFT(BaseModelC):
