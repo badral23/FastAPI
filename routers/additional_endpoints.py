@@ -47,17 +47,6 @@ def get_user_by_wallet(db: Session, wallet_address: str) -> Optional[User]:
     return None
 
 
-# Helper functions
-def get_user_by_wallet(db: Session, wallet_address: str) -> Optional[User]:
-    """Get user by wallet address (case-insensitive)"""
-    # Clean the wallet address
-    clean_address = wallet_address.strip()
-
-    return db.query(User).filter(
-        User.wallet_address.ilike(clean_address),  # Case-insensitive search
-        User.deleted.is_(False)
-    ).first()
-
 
 def get_user_by_wallet_or_404(db: Session, wallet_address: str) -> User:
     """Get user by wallet address or raise 404"""
