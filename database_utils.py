@@ -22,6 +22,7 @@ def retry_db_operation(max_retries: int = 3, delay: float = 1.0):
         @wraps(func)
         def wrapper(*args, **kwargs) -> Any:
             last_exception = None
+            current_delay = delay  # ← Fix: Create local copy of delay
 
             for attempt in range(max_retries + 1):
                 try:
@@ -41,11 +42,11 @@ def retry_db_operation(max_retries: int = 3, delay: float = 1.0):
                         if attempt < max_retries:
                             logger.warning(
                                 f"Database connection error on attempt {attempt + 1}/{max_retries + 1}: {e}. "
-                                f"Retrying in {delay} seconds..."
+                                f"Retrying in {current_delay} seconds..."  # ← Fix: Use current_delay
                             )
-                            time.sleep(delay)
+                            time.sleep(current_delay)  # ← Fix: Use current_delay
                             # Exponential backoff
-                            delay *= 1.5
+                            current_delay *= 1.5  # ← Fix: Modify current_delay
                             continue
 
                     # If not a retry-able error or max retries reached
