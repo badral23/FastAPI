@@ -78,6 +78,7 @@ def test_auth_login(request: WalletLoginTestRequest, db: Session = Depends(get_d
 
     msg = encode_defunct(text=message)
     signed_message = Account.sign_message(msg, private_key=request.private_key).signature.hex()
+    print(signed_message)
 
     if not verify_signature(signed_message, request.wallet_address, message):
         raise HTTPException(
