@@ -14,6 +14,11 @@ class WalletLoginRequest(BaseModel):
     wallet_address: str
 
 
+class WalletLoginTestRequest(BaseModel):
+    wallet_address: str
+    private_key: str
+
+
 @router.post("/login")
 def login(request: WalletLoginRequest, db: Session = Depends(get_db)):
     message = f"Sign this message to log in with your wallet: {request.wallet_address}"
@@ -62,3 +67,40 @@ def refresh_token(request: WalletLoginRequest, db: Session = Depends(get_db)):
     access_token = create_access_token(data={"wallet_address": user.wallet_address})
 
     return {"access_token": access_token}
+
+
+@router.post("/test-login")
+def test_auth_login(request: WalletLoginTestRequest, db: Session = Depends(get_db)):
+    message = f"Sign this message to log in with your wallet: {request.wallet_address}"
+
+    from eth_account import Account
+    from eth_account.messages import encode_defunct
+
+    msg = encode_defunct(text=message)
+    signed_message = Account.sign_message(msg, private_key=request.private_key).signature.hex()
+
+    if not verify_signature(signed_message, request.wallet_address, message):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid message signature"
+        )
+
+    # Check if user exists
+    user = db.query(User).filter(User.wallet_address == request.wallet_address).first()
+
+    if not user:
+        # Create new user if it doesn't exist
+        user = User(wallet_address=request.wallet_address)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    # Create JWT and refresh token
+    access_token = create_access_token(data={"wallet_address": user.wallet_address})
+    refresh_token = create_refresh_token(data={"wallet_address": user.wallet_address})
+
+    # Optionally, store refresh token in DB
+    user.refresh_token = refresh_token
+    db.commit()
+
+    return {"access_token": access_token, "refresh_token": refresh_token}
