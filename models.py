@@ -1,9 +1,7 @@
 from datetime import datetime, timezone
-
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Index, ForeignKey
-from sqlalchemy.orm import Session, declared_attr
-
 from database import Base
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Index, ForeignKey, JSON, Text
+from sqlalchemy.orm import Session, declared_attr
 
 
 class BaseModelC(Base):
@@ -148,3 +146,18 @@ class UserSocial(BaseModelC):
     user_id = Column(Integer, ForeignKey("users.id"), index=True)
     platform = Column(String)
     handle = Column(String)
+
+
+class Box(BaseModelC):
+    __tablename__ = "boxes"
+
+    position = Column(Integer, unique=True, nullable=False)  # 1 to 50,000
+    reward_type = Column(String, nullable=False)  # "standard_nft", "apecoin", "rare_nft", "apefest_ticket"
+    reward_tier = Column(String, nullable=True)  # For ApeCoin: "tier1", "tier2", "tier3", "tier4"
+    reward_data = Column(JSON, nullable=True)  # Additional reward metadata
+    reward_description = Column(Text, nullable=True)  # Human-readable description
+
+    # Box status
+    is_opened = Column(Boolean, default=False)
+    opened_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    opened_at = Column(DateTime, nullable=True)
