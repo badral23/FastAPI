@@ -1,4 +1,6 @@
-from crud import create_crud_router, CRUDRouterConfig
+
+
+from crud import create_authenticated_crud_router, CRUDRouterConfig
 from handlers.user_social_handlers import (
     create_user_social_with_validation,
     update_user_social_with_validation
@@ -16,10 +18,13 @@ user_social_config = CRUDRouterConfig(
     enable_restore=True,
 )
 
-user_social_router = create_crud_router(
+# Users can only manage their own social accounts
+user_social_router = create_authenticated_crud_router(
     model=UserSocial,
     schema_create=UserSocialCreateSchema,
     schema_read=UserSocialSchema,
     custom_handlers=user_social_custom_handlers,
-    router_config=user_social_config
+    router_config=user_social_config,
+    require_auth=True,
+    owner_field="user_id"  # Social accounts belong to users
 )

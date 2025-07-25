@@ -522,3 +522,155 @@ def create_readonly_router(
         enable_restore=False
     )
     return create_crud_router(model, None, schema_read, router_config=config)
+
+
+def create_authenticated_crud_router(
+        model: Type[T],
+        schema_create: Type[schemas.BaseCreate],
+        schema_read: Type[schemas.Base],
+        custom_handlers: Optional[Dict[str, Callable]] = None,
+        router_config: Optional[CRUDRouterConfig] = None,
+        require_auth: bool = True,
+        owner_field: Optional[str] = None  # Field to check ownership (e.g., 'user_id')
+) -> APIRouter:
+    """
+    Create a FastAPI CRUD router with JWT authentication.
+
+    Args:
+        model: SQLAlchemy model class
+        schema_create: Pydantic schema for creating items
+        schema_read: Pydantic schema for reading items
+        custom_handlers: Dictionary of custom endpoint handlers
+        router_config: Configuration for which endpoints to include
+        require_auth: Whether to require authentication for all endpoints
+        owner_field: Field name to check ownership (users can only access their own data)
+    """
+    from handlers.auth_handlers import get_current_user
+    from models import User
+
+    if router_config is None:
+        router_config = CRUDRouterConfig()
+
+    router = APIRouter(
+        prefix=f"/{model.__tablename__}",
+        tags=[model.__tablename__],
+    )
+
+    custom_handlers = custom_handlers or {}
+
+    def get_handler(operation: str, default_handler: Callable) -> Callable:
+        handler = custom_handlers.get(operation, default_handler)
+        permission_check = router_config.custom_permissions.get(operation)
+
+        if permission_check:
+            def wrapped_handler(*args, **kwargs):
+                permission_check(*args, **kwargs)
+                return handler(*args, **kwargs)
+
+            return wrapped_handler
+        return handler
+
+    def check_ownership(item, current_user: User, operation: str = "access"):
+        """Check if user owns the item"""
+        if owner_field and hasattr(item, owner_field):
+            if getattr(item, owner_field) != current_user.id:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Not authorized to {operation} this {model.__tablename__}"
+                )
+
+    # Authentication dependency
+    auth_dependency = Depends(get_current_user) if require_auth else None
+
+    @router.post("", response_model=schema_read, status_code=201)
+    def create_item_endpoint(
+            item: schema_create,
+            db: Session = Depends(get_db),
+            current_user: User = auth_dependency
+    ):
+        if require_auth and owner_field:
+            # Auto-set owner field for creation
+            item_dict = item.model_dump()
+            item_dict[owner_field] = current_user.id
+            item = schema_create(**item_dict)
+
+        handler = get_handler("create", create_item)
+        return handler(db=db, model=model, schema=item)
+
+    @router.get("", response_model=List[schema_read])
+    def read_items(
+            skip: int = Query(0, ge=0, description="Number of items to skip"),
+            limit: int = Query(config.DEFAULT_LIMIT, le=config.MAX_LIMIT, description="Number of items to return"),
+            include_deleted: bool = Query(False, description="Include soft-deleted items"),
+            db: Session = Depends(get_db),
+            current_user: User = auth_dependency
+    ):
+        handler = get_handler("read_list", get_items)
+
+        # Apply ownership filter if specified
+        filters = {}
+        if require_auth and owner_field:
+            filters[owner_field] = current_user.id
+
+        return handler(db, model=model, skip=skip, limit=limit,
+                       include_deleted=include_deleted, filters=filters)
+
+    @router.get("/{item_id}", response_model=schema_read)
+    def read_item(
+            item_id: int,
+            include_deleted: bool = Query(False, description="Include soft-deleted items"),
+            db: Session = Depends(get_db),
+            current_user: User = auth_dependency
+    ):
+        handler = get_handler("read", get_item_by_id)
+        db_item = handler(db, model=model, item_id=item_id, include_deleted=include_deleted)
+
+        if db_item is None:
+            raise HTTPException(status_code=404, detail=f"{model.__tablename__.capitalize()} not found")
+
+        if require_auth:
+            check_ownership(db_item, current_user, "access")
+
+        return db_item
+
+    @router.put("/{item_id}", response_model=schema_read)
+    def update_item_endpoint(
+            item_id: int,
+            item: schema_create,
+            db: Session = Depends(get_db),
+            current_user: User = auth_dependency
+    ):
+        # Check ownership before update
+        if require_auth and owner_field:
+            existing_item = model.get(db, id=item_id)
+            if existing_item:
+                check_ownership(existing_item, current_user, "update")
+
+        handler = get_handler("update",
+                              lambda db, model, item_id, schema: update_item(db, model, item_id, schema, partial=False))
+        db_item = handler(db, model=model, item_id=item_id, schema=item)
+
+        if db_item is None:
+            raise HTTPException(status_code=404, detail=f"{model.__tablename__.capitalize()} not found")
+        return db_item
+
+    @router.delete("/{item_id}", response_model=schema_read)
+    def soft_delete_item_endpoint(
+            item_id: int,
+            db: Session = Depends(get_db),
+            current_user: User = auth_dependency
+    ):
+        # Check ownership before delete
+        if require_auth and owner_field:
+            existing_item = model.get(db, id=item_id)
+            if existing_item:
+                check_ownership(existing_item, current_user, "delete")
+
+        handler = get_handler("delete", delete_item)
+        db_item = handler(db, model=model, item_id=item_id)
+
+        if db_item is None:
+            raise HTTPException(status_code=404, detail=f"{model.__tablename__.capitalize()} not found")
+        return db_item
+
+    return router

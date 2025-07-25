@@ -10,8 +10,8 @@ router = APIRouter()
 
 
 class WalletLoginRequest(BaseModel):
-    signed_message: str
     wallet_address: str
+    signed_message: str
 
 
 class WalletLoginTestRequest(BaseModel):
