@@ -12,6 +12,7 @@ router = APIRouter()
 class WalletLoginRequest(BaseModel):
     wallet_address: str
     signed_message: str
+    message: str
 
 
 class WalletLoginTestRequest(BaseModel):
@@ -21,9 +22,9 @@ class WalletLoginTestRequest(BaseModel):
 
 @router.post("/login")
 def login(request: WalletLoginRequest, db: Session = Depends(get_db)):
-    message = f"Sign this message to log in with your wallet: {request.wallet_address}"
+    # message = f"Sign this message to log in with your wallet: {request.wallet_address}"
 
-    if not verify_signature(request.signed_message, request.wallet_address, message):
+    if not verify_signature(request.signed_message, request.wallet_address, request.message):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid message signature"
