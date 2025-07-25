@@ -83,8 +83,25 @@ def verify_signature(signed_message: str, wallet_address: str, message: str) -> 
     try:
         from eth_account import Account
         from eth_account.messages import encode_defunct
+
+        print(f"=== SIGNATURE VERIFICATION DEBUG ===")
+        print(f"Message bytes: {message.encode('utf-8')}")
+        print(f"Message: '{message}'")
+        print(f"Wallet address: {wallet_address}")
+        print(f"Signature: {signed_message}")
+
         msg = encode_defunct(text=message)
         recovered_address = Account.recover_message(msg, signature=signed_message)
+
+        print(f"Recovered address: {recovered_address}")
+        print(f"Expected address: {wallet_address}")
+        print(f"Match (case-sensitive): {recovered_address == wallet_address}")
+        print(f"Match (case-insensitive): {recovered_address.lower() == wallet_address.lower()}")
+
         return recovered_address.lower() == wallet_address.lower()
-    except Exception:
+
+    except Exception as e:
+        print(f"Exception in verify_signature: {e}")
+        import traceback
+        traceback.print_exc()
         return False
