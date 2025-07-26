@@ -164,3 +164,13 @@ class Box(BaseModelC):
     is_opened = Column(Boolean, default=False)
     opened_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     opened_at = Column(DateTime, nullable=True)
+
+
+class SupportedNFTCollection(BaseModelCU):
+    __tablename__ = "supported_nft_collections"
+
+    collection_name = Column(String, unique=True, nullable=False)
+    collection_address = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    image_url = Column(String, nullable=True)
+    website_url = Column(String, nullable=True)

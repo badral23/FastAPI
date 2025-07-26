@@ -5,9 +5,8 @@ from database import Base, engine
 from routers.additional_endpoints import additional_router
 from routers.auth_router import router as auth_router
 from routers.box_router import box_router
-from routers.user_nft_router import user_nft_router
-from routers.user_router import user_router
-from routers.user_social_router import user_social_router
+from routers.dashboard import router as dashboard_router
+from routers.user_router import router as user_router
 
 Base.metadata.create_all(bind=engine)
 
@@ -30,17 +29,17 @@ app.add_middleware(
 api_router = APIRouter(prefix="/api/v1")
 
 # Include routers - order matters for route conflicts
-api_router.include_router(auth_router)        # /login, /refresh-token (public)
-api_router.include_router(additional_router)  # /users/me, /socials/check (authenticated) - MUST be first
-api_router.include_router(box_router)         # /boxes/* (authenticated) - NEW BOX OPENING ENDPOINTS
-api_router.include_router(user_router)        # /users/{item_id} (authenticated) - comes after specific routes
-api_router.include_router(user_nft_router)    # /user_nft/* (authenticated)
-api_router.include_router(user_social_router) # /user_social/* (authenticated)
+api_router.include_router(auth_router, prefix="/auth",
+                          tags=["Auth"])
+api_router.include_router(dashboard_router, prefix="/dashboard", tags=["Dashboard"])
+api_router.include_router(additional_router)
+api_router.include_router(box_router)
+api_router.include_router(user_router, prefix="/user", tags=["User"])
 
 app.include_router(api_router)
 
 
-@app.get("/health")
+@app.get("/api/v1/health")
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy", "version": "1.0.0"}

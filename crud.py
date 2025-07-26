@@ -364,20 +364,26 @@ class CRUDRouterConfig:
 
 def create_crud_router(
         model: Type[T],
+        prefix: str,
         schema_create: Type[schemas.BaseCreate],
         schema_read: Type[schemas.Base],
         custom_handlers: Optional[Dict[str, Callable]] = None,
-        router_config: Optional[CRUDRouterConfig] = None
+        router_config: Optional[CRUDRouterConfig] = None,
+        auth_dependency: Callable = None,
+        tags: List[str] = None
 ) -> APIRouter:
     """
     Create a FastAPI CRUD router for a given model with optional custom handlers.
 
     Args:
         model: SQLAlchemy model class.
+        prefix: URL prefix for the router.
         schema_create: Pydantic schema for creating items.
         schema_read: Pydantic schema for reading items.
         custom_handlers: Dictionary of custom endpoint handlers.
         router_config: Configuration for which endpoints to include.
+        auth_dependency: Dependency for authentication.
+        tags: List of tags for the router.
 
     Returns:
         FastAPI APIRouter with CRUD endpoints.
@@ -385,10 +391,10 @@ def create_crud_router(
     if router_config is None:
         router_config = CRUDRouterConfig()
 
-    router = APIRouter(
-        prefix=f"/{model.__tablename__}",
-        tags=[model.__tablename__],
-    )
+    router = APIRouter(prefix=prefix, tags=tags)
+
+    dependencies = [Depends(auth_dependency)] if auth_dependency else []
+    router.dependencies = dependencies
 
     # Use custom handlers if provided, otherwise default to standard functions
     custom_handlers = custom_handlers or {}
@@ -498,30 +504,6 @@ def create_crud_router(
             return handler(db, model=model, include_deleted=include_deleted)
 
     return router
-
-
-# Convenience function for basic CRUD router
-def create_basic_crud_router(
-        model: Type[T],
-        schema_create: Type[schemas.BaseCreate],
-        schema_read: Type[schemas.Base]
-) -> APIRouter:
-    """Create a basic CRUD router with default settings."""
-    return create_crud_router(model, schema_create, schema_read)
-
-
-# Convenience function for read-only router
-def create_readonly_router(
-        model: Type[T],
-        schema_read: Type[schemas.Base]
-) -> APIRouter:
-    """Create a read-only router."""
-    config = CRUDRouterConfig(
-        enable_soft_delete=False,
-        enable_hard_delete=False,
-        enable_restore=False
-    )
-    return create_crud_router(model, None, schema_read, router_config=config)
 
 
 def create_authenticated_crud_router(

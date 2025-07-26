@@ -1,13 +1,14 @@
 from typing import Dict, Any
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from database import get_db
 from handlers.auth_handlers import get_current_user
-from models import User
+from models import User, Box
 from services.box_service import BoxOpeningService
 
-box_router = APIRouter(prefix="/boxes", tags=["Box Opening"])
+box_router = APIRouter()
 
 
 @box_router.post("/open", response_model=Dict[str, Any])

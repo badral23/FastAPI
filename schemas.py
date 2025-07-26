@@ -184,3 +184,29 @@ class NextBoxResponseSchema(Base):
 
     class Config:
         from_attributes = True
+
+
+class SupportedNFTCollectionSchema(Base):
+    id: int
+    collection_name: str
+    collection_address: str
+    description: str
+    image_url: str
+    website_url: str
+    created_at: datetime
+    updated_at: datetime
+    deleted: bool
+
+    class Config:
+        from_attributes = True
+
+
+class SupportedNFTCollectionCreateSchema(BaseCreate):
+    collection_name: str
+    collection_address: str
+    description: str
+    image_url: str
+    website_url: str
+
+    class Config:
+        from_attributes = True
