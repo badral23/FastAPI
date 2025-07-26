@@ -28,11 +28,12 @@ app.add_middleware(
 
 api_router = APIRouter(prefix="/api/v1")
 
-api_router.include_router(auth_router)
-api_router.include_router(user_router)
-api_router.include_router(user_nft_router)
-api_router.include_router(user_social_router)
-api_router.include_router(additional_router)
+# Include routers - order matters for route conflicts
+api_router.include_router(auth_router)        # /login, /refresh-token (public)
+api_router.include_router(additional_router)  # /users/me, /socials/check (now ALL authenticated) - MUST be first
+api_router.include_router(user_router)        # /users/{item_id} (authenticated) - comes after specific routes
+api_router.include_router(user_nft_router)    # /user_nft/* (authenticated)
+api_router.include_router(user_social_router) # /user_social/* (authenticated)
 
 app.include_router(api_router)
 

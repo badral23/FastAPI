@@ -1,4 +1,4 @@
-# routers/additional_endpoints.py - Updated with JWT protection
+# routers/additional_endpoints.py - All routes now authenticated
 
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,14 +12,15 @@ from schemas import UserSocialSchema, UserNFTSchema, UserSchema
 additional_router = APIRouter()
 
 
-# Public endpoints (no auth required)
+# NOW ALL ENDPOINTS REQUIRE AUTHENTICATION
 @additional_router.get("/socials/check/{platform}/{handle}")
 async def check_social_handle_availability(
         platform: str,
         handle: str,
-        db: Session = Depends(get_db)
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user)  # ← Added authentication
 ):
-    """Public endpoint to check if social handle is available"""
+    """Check if social handle is available (now requires auth)"""
     existing = db.query(UserSocial).filter(
         UserSocial.handle == handle,
         UserSocial.platform == platform,
@@ -30,23 +31,29 @@ async def check_social_handle_availability(
         "platform": platform,
         "handle": handle,
         "available": existing is None,
-        "message": "Handle is available" if existing is None else "Handle is already taken"
+        "message": "Handle is available" if existing is None else "Handle is already taken",
+        "checked_by": current_user.wallet_address  # Show who checked
     }
 
 
 @additional_router.get("/users/check-wallet/{wallet_address}")
-async def check_wallet_availability(wallet_address: str, db: Session = Depends(get_db)):
-    """Public endpoint to check if wallet address is available"""
+async def check_wallet_availability(
+        wallet_address: str,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user)  # ← Added authentication
+):
+    """Check if wallet address is available (now requires auth)"""
     existing_user = get_user_by_wallet(db, wallet_address)
     return {
         "wallet_address": wallet_address,
         "available": existing_user is None,
         "message": "Wallet is available" if existing_user is None else "Wallet is already registered",
-        "user_exists": existing_user is not None
+        "user_exists": existing_user is not None,
+        "checked_by": current_user.wallet_address  # Show who checked
     }
 
 
-# Protected endpoints (require JWT authentication)
+# These were already authenticated - keeping as is
 @additional_router.get("/users/me", response_model=UserSchema)
 async def get_current_user_profile(current_user: User = Depends(get_current_user)):
     """Get current authenticated user's profile"""
