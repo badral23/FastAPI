@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 
 from crud import create_crud_router, CRUDRouterConfig
-from handlers.auth_handlers import get_current_user
+from handlers.auth_handlers import get_current_admin
 from handlers.user_social_handlers import create_user_social_with_validation, update_user_social_with_validation
 from models import User, UserSocial, SupportedNFTCollection
 from schemas import UserCreateSchema, UserSchema, UserSocialCreateSchema, UserSocialSchema, \
@@ -30,7 +30,7 @@ user_router = create_crud_router(
     schema_create=UserCreateSchema,
     schema_read=UserSchema,
     router_config=user_config,
-    auth_dependency=get_current_user,
+    auth_dependency=get_current_admin,
     tags=["Users"]
 )
 
@@ -40,7 +40,7 @@ user_social_router = create_crud_router(
     schema_create=UserSocialCreateSchema,
     schema_read=UserSocialSchema,
     router_config=user_social_config,
-    auth_dependency=get_current_user,
+    auth_dependency=get_current_admin,
     tags=["User Socials"],
     custom_handlers={
         "create": create_user_social_with_validation,
@@ -54,7 +54,7 @@ supported_nft_collection_router = create_crud_router(
     schema_create=SupportedNFTCollectionCreateSchema,
     schema_read=SupportedNFTCollectionSchema,
     router_config=supported_nft_collection_config,
-    auth_dependency=get_current_user,
+    auth_dependency=get_current_admin,
     tags=["User Socials"],
     custom_handlers={
         "create": create_user_social_with_validation,

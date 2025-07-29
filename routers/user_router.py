@@ -82,20 +82,16 @@ async def check_nfts_for_user(
         ).first()
 
         if existing_nft:
-            if existing_nft.used:
-                continue
-            else:
-                existing_nft.used = True
+            continue
         else:
             user_nft = UserNFT(
                 user_id=current_user.id,
                 nft_collection=nft['collection'],
                 nft_id=nft['nft_id'],
-                used=False
+                used=True
             )
             db.add(user_nft)
-
-        new_nfts.append(nft)
+            new_nfts.append(nft)
 
     db.commit()
     db.refresh(current_user)

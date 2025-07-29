@@ -126,6 +126,14 @@ class BaseModelCU(BaseModelC):
         return self
 
 
+class Admin(BaseModelCU):
+    __tablename__ = "admins"
+
+    username = Column(String, unique=True, index=True)
+    password = Column(String)
+    refresh_token = Column(String, nullable=True)
+
+
 class User(BaseModelCU):
     __tablename__ = "users"
 

@@ -3,8 +3,9 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database import get_db
-from handlers.auth_handlers import create_access_token, create_refresh_token, decode_refresh_token, verify_signature
-from models import User
+from handlers.auth_handlers import create_access_token, create_refresh_token, verify_signature, \
+    refresh_access_token
+from models import User, Admin
 
 router = APIRouter()
 
@@ -15,9 +16,18 @@ class WalletLoginRequest(BaseModel):
     message: str
 
 
+class AdminLoginRequest(BaseModel):
+    username: str
+    password: str
+
+
 class WalletLoginTestRequest(BaseModel):
     wallet_address: str
     private_key: str
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
 
 
 @router.post("/login")
@@ -42,23 +52,22 @@ def login(request: WalletLoginRequest, db: Session = Depends(get_db)):
     user.refresh_token = refresh_token
     db.commit()
 
-    return {"access_token": access_token, "refresh_token": refresh_token}
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "wallet_address": user.wallet_address,
+        "token_type": "bearer"
+    }
 
 
-@router.post("/refresh-token")
-def refresh_token(request: WalletLoginRequest, db: Session = Depends(get_db)):
-    payload = decode_refresh_token(request.signed_message)
-
-    user = db.query(User).filter(User.wallet_address == payload['wallet_address']).first()
-    if user is None or user.refresh_token != request.signed_message:
+@router.post("/refresh")
+def refresh_token(request: RefreshTokenRequest, db: Session = Depends(get_db)):
+    if not request.refresh_token:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid refresh token"
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Refresh token is required."
         )
-
-    access_token = create_access_token(data={"wallet_address": user.wallet_address})
-
-    return {"access_token": access_token}
+    return refresh_access_token(request.refresh_token, db)
 
 
 @router.post("/test-login")
@@ -92,4 +101,37 @@ def test_auth_login(request: WalletLoginTestRequest, db: Session = Depends(get_d
     user.refresh_token = refresh_token
     db.commit()
 
-    return {"access_token": access_token, "refresh_token": refresh_token}
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer"
+    }
+
+
+@router.post("/admin-login")
+def admin_login(request: AdminLoginRequest, db: Session = Depends(get_db)):
+    admin = db.query(Admin).filter(Admin.username == request.username).first()
+
+    if not admin:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid username"
+        )
+
+    if not request.password == admin.password:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid password"
+        )
+
+    access_token = create_access_token(data={"username": admin.username})
+    refresh_token = create_refresh_token(data={"username": admin.username})
+
+    admin.refresh_token = refresh_token
+    db.commit()
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer"
+    }
