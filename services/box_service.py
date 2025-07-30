@@ -21,16 +21,6 @@ class BoxOpeningService:
     def calculate_user_keys(user: User, db: Session) -> Dict[str, Any]:
         """
         Calculate total available keys for a user based on social tasks and NFT ownership
-
-        Returns:
-            dict: {
-                "social_keys": int,
-                "nft_keys": int,
-                "total_available": int,
-                "social_completed": bool,
-                "nft_count": int,
-                "breakdown": dict
-            }
         """
         try:
             # Social verification: All 3 tasks completed = 1 key
@@ -49,7 +39,7 @@ class BoxOpeningService:
             social_tasks_completed = required_platforms.issubset(platforms_completed)
             social_keys = 1 if social_tasks_completed else 0
 
-            # NFT verification: Count unused NFTs (2-10 keys based on NFT count)
+            # NFT verification: Count unused NFTs
             unused_nfts = db.query(UserNFT).filter(
                 UserNFT.user_id == user.id,
                 UserNFT.used.is_(False),
@@ -57,10 +47,14 @@ class BoxOpeningService:
             ).all()
 
             nft_count = len(unused_nfts)
-            # Scale NFT keys: 2-10 keys based on NFT count (cap at 10)
-            nft_keys = min(max(nft_count, 0), 10)
-            if nft_count > 0 and nft_keys < 2:
-                nft_keys = 2  # Minimum 2 keys if user has any NFTs
+
+            # FIXED: NFT key calculation per specification
+            if nft_count == 0:
+                nft_keys = 0
+            elif nft_count == 1:
+                nft_keys = 2  # Minimum 2 keys for 1 NFT
+            else:
+                nft_keys = min(nft_count, 10)  # 1 key per NFT, max 10
 
             total_available = social_keys + nft_keys
 
@@ -70,18 +64,21 @@ class BoxOpeningService:
                 "total_available": total_available,
                 "social_completed": social_tasks_completed,
                 "nft_count": nft_count,
+                "unused_nft_count": nft_count,
                 "platforms_completed": list(platforms_completed),
                 "required_platforms": list(required_platforms),
                 "breakdown": {
                     "social_tasks": {
                         "completed": social_tasks_completed,
                         "platforms": list(platforms_completed),
+                        "missing_platforms": list(required_platforms - platforms_completed),
                         "keys_earned": social_keys
                     },
                     "nft_ownership": {
                         "total_nfts": nft_count,
                         "unused_nfts": nft_count,
-                        "keys_earned": nft_keys
+                        "keys_earned": nft_keys,
+                        "key_calculation": f"{nft_count} NFTs -> {nft_keys} keys"
                     }
                 }
             }
@@ -91,21 +88,14 @@ class BoxOpeningService:
             raise HTTPException(status_code=500, detail="Error calculating available keys")
 
     @staticmethod
-    @retry_db_operation(max_retries=3, delay=0.1)
     def assign_next_box_atomically(user: User, db: Session) -> Optional[Box]:
         """
-        Atomically assign the next available box to a user
-        Uses database-level locking to prevent race conditions
-
-        Returns:
-            Box: The assigned box, or None if no boxes available
+        FIXED: Atomically assign the next available box to a user
+        Removed manual db.begin() to fix transaction error
         """
         try:
-            # Start transaction
-            db.begin()
-
             # Use FOR UPDATE SKIP LOCKED for atomic box assignment
-            # This prevents race conditions when multiple users try to open boxes simultaneously
+            # SQLAlchemy will handle the transaction automatically
             result = db.execute(text("""
                 SELECT id, position, reward_type, reward_tier, reward_data, reward_description
                 FROM boxes 
@@ -119,7 +109,7 @@ class BoxOpeningService:
             box_row = result.fetchone()
 
             if not box_row:
-                db.rollback()
+                logger.warning("No available boxes for assignment")
                 return None
 
             # Update the box as opened
@@ -138,8 +128,8 @@ class BoxOpeningService:
                 "box_id": box_id
             })
 
-            # Commit transaction
-            db.commit()
+            # Flush to ensure the update is applied
+            db.flush()
 
             # Fetch the updated box object
             assigned_box = db.query(Box).filter(Box.id == box_id).first()
@@ -148,68 +138,57 @@ class BoxOpeningService:
             return assigned_box
 
         except SQLAlchemyError as e:
-            db.rollback()
             logger.error(f"Database error in assign_next_box_atomically: {e}")
             raise HTTPException(status_code=500, detail="Database error during box assignment")
         except Exception as e:
-            db.rollback()
             logger.error(f"Unexpected error in assign_next_box_atomically: {e}")
             raise HTTPException(status_code=500, detail="Unexpected error during box assignment")
 
     @staticmethod
-    def mark_user_nfts_as_used(user: User, db: Session, nfts_to_use: int = None) -> int:
+    def mark_user_nfts_as_used(user: User, db: Session, nft_count_to_use: int = 1) -> List[Dict[str, Any]]:
         """
-        Mark user's NFTs as used to prevent double-spending
-
-        Args:
-            user: User object
-            db: Database session
-            nfts_to_use: Number of NFTs to mark as used (None = mark all unused)
-
-        Returns:
-            int: Number of NFTs marked as used
+        FIXED: Mark user's NFTs as used to prevent double-spending
+        Returns list of NFTs that were marked as used
         """
         try:
-            # Get unused NFTs
-            unused_nfts_query = db.query(UserNFT).filter(
+            # Get unused NFTs (ordered by creation date for fairness)
+            unused_nfts = db.query(UserNFT).filter(
                 UserNFT.user_id == user.id,
                 UserNFT.used.is_(False),
                 UserNFT.deleted.is_(False)
-            )
+            ).order_by(UserNFT.created_at).limit(nft_count_to_use).all()
 
-            if nfts_to_use is not None:
-                unused_nfts = unused_nfts_query.limit(nfts_to_use).all()
-            else:
-                unused_nfts = unused_nfts_query.all()
+            if len(unused_nfts) < nft_count_to_use:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Not enough unused NFTs. Need {nft_count_to_use}, have {len(unused_nfts)}"
+                )
 
             # Mark them as used
-            nfts_marked = 0
+            marked_nfts = []
             for nft in unused_nfts:
                 nft.used = True
                 db.add(nft)
-                nfts_marked += 1
+                marked_nfts.append({
+                    "id": nft.id,
+                    "collection": nft.nft_collection,
+                    "nft_id": nft.nft_id
+                })
 
-            db.commit()
+            # Flush to ensure updates are applied
+            db.flush()
 
-            logger.info(f"Marked {nfts_marked} NFTs as used for user {user.id}")
-            return nfts_marked
+            logger.info(f"Marked {len(marked_nfts)} NFTs as used for user {user.id}")
+            return marked_nfts
 
         except Exception as e:
-            db.rollback()
             logger.error(f"Error marking NFTs as used for user {user.id}: {e}")
             raise HTTPException(status_code=500, detail="Error updating NFT usage status")
 
     @staticmethod
     def open_box(user: User, db: Session) -> Dict[str, Any]:
         """
-        Main box opening function - handles the complete flow
-
-        Args:
-            user: Authenticated user
-            db: Database session
-
-        Returns:
-            dict: Box opening result with reward details
+        FIXED: Main box opening function with proper transaction handling
         """
         try:
             # Step 1: Calculate available keys
@@ -230,16 +209,24 @@ class BoxOpeningService:
                     detail="No boxes available. All boxes have been opened!"
                 )
 
-            # Step 3: Mark NFTs as used (prevent double-spending)
-            if key_info["nft_count"] > 0:
-                BoxOpeningService.mark_user_nfts_as_used(user, db, nfts_to_use=1)
+            # Step 3: Consume one key by marking NFTs as used
+            # Priority: Use NFT keys first (more valuable), then social keys
+            nfts_marked = []
+            key_source = "social"
 
-            # Step 4: Update user's key count (decrement by 1)
-            user.key_count = max(0, user.key_count - 1)
-            db.add(user)
+            if key_info["nft_keys"] > 0:
+                # Use NFT key - mark one NFT as used
+                nfts_marked = BoxOpeningService.mark_user_nfts_as_used(user, db, 1)
+                key_source = "nft"
+            # Social keys don't need marking (they're permanent once earned)
+
+            # Step 4: Commit all changes in one transaction
             db.commit()
 
-            # Step 5: Prepare response
+            # Step 5: Log the box opening
+            logger.info(f"User {user.id} opened box {assigned_box.position} using {key_source} key")
+
+            # Step 6: Prepare response
             response = {
                 "success": True,
                 "box": {
@@ -254,19 +241,23 @@ class BoxOpeningService:
                 "user": {
                     "id": user.id,
                     "wallet_address": user.wallet_address,
-                    "keys_remaining": user.key_count
                 },
-                "key_info": key_info,
+                "key_consumption": {
+                    "key_source": key_source,
+                    "nfts_used": nfts_marked,
+                    "remaining_keys": BoxOpeningService.calculate_user_keys(user, db)["total_available"]
+                },
                 "message": f"Congratulations! You opened box #{assigned_box.position} and won: {assigned_box.reward_description}"
             }
 
-            logger.info(f"User {user.id} successfully opened box {assigned_box.position} - {assigned_box.reward_type}")
             return response
 
         except HTTPException:
             # Re-raise HTTP exceptions (these have proper error messages)
             raise
         except Exception as e:
+            # Rollback transaction on any error
+            db.rollback()
             logger.error(f"Unexpected error in open_box for user {user.id}: {e}")
             raise HTTPException(status_code=500, detail="Unexpected error during box opening")
 
@@ -274,15 +265,6 @@ class BoxOpeningService:
     def get_user_opened_boxes(user: User, db: Session, limit: int = 50, offset: int = 0) -> Dict[str, Any]:
         """
         Get list of boxes opened by a user
-
-        Args:
-            user: User object
-            db: Database session
-            limit: Maximum number of results
-            offset: Pagination offset
-
-        Returns:
-            dict: User's opened boxes with pagination info
         """
         try:
             # Get user's opened boxes
@@ -330,9 +312,6 @@ class BoxOpeningService:
     def get_box_opening_stats(db: Session) -> Dict[str, Any]:
         """
         Get overall statistics about box openings
-
-        Returns:
-            dict: Box opening statistics
         """
         try:
             # Total boxes
