@@ -57,7 +57,7 @@ async def get_my_nfts(
     return nfts
 
 
-@router.post("/nfts/check_nfts")
+@router.post("/nfts/check-nfts")
 async def check_nfts_for_user(
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user)
