@@ -3,6 +3,7 @@ from typing import List
 from fastapi import Depends, HTTPException, status, APIRouter
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from starlette.responses import JSONResponse
 
 from database import get_db
 from handlers.auth_handlers import get_current_user
@@ -123,8 +124,12 @@ async def add_social(
         current_user: User = Depends(get_current_user)
 ):
     valid_platforms = ["twitter", "discord", "telegram"]
+
     if social.platform not in valid_platforms:
-        return {"error": "Invalid platform. Choose from 'twitter', 'discord', or 'telegram'."}
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid platform. Choose from 'twitter', 'discord', or 'telegram'."
+        )
 
     existing_social = db.query(UserSocial).filter(
         UserSocial.user_id == current_user.id,
@@ -132,7 +137,10 @@ async def add_social(
     ).first()
 
     if existing_social:
-        return {"message": f"{social.platform.capitalize()} handle is already connected."}
+        return JSONResponse(
+            content={"message": f"{social.platform.capitalize()} handle is already connected."},
+            status_code=status.HTTP_409_CONFLICT
+        )
 
     new_social = UserSocial(
         user_id=current_user.id,
@@ -146,4 +154,7 @@ async def add_social(
     current_user.key_count += 1
     db.commit()
 
-    return {"message": f"{social.platform.capitalize()} handle added successfully!"}
+    return JSONResponse(
+        content={"message": f"{social.platform.capitalize()} handle added successfully!"},
+        status_code=status.HTTP_201_CREATED
+    )

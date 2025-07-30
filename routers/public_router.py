@@ -7,7 +7,7 @@ from models import SupportedNFTCollection
 router = APIRouter()
 
 
-@router.post("/collections")
+@router.get("/collections")
 def get_collections(db: Session = Depends(get_db)):
     collections = db.query(SupportedNFTCollection).all()
     if not collections:
