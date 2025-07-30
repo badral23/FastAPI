@@ -5,7 +5,7 @@ from database import Base, engine
 from routers.additional_endpoints import additional_router
 from routers.auth_router import router as auth_router
 from routers.box_router import box_router
-from routers.dashboard import router as dashboard_router
+from routers.dashboard_router import router as dashboard_router
 from routers.public_router import router as public_router
 from routers.user_router import router as user_router
 
