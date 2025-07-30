@@ -35,17 +35,17 @@ class UserSchema(Base):
 class UserSocialCreateSchema(BaseCreate):
     user_id: int
     platform: str
-    handle: str
+    handle: Optional[str]
 
     class Config:
         from_attributes = True
 
 
 class UserSocialSchema(Base):
-    id: str
+    id: int
     user_id: int
     platform: str
-    handle: str
+    handle: Optional[str]
     created_at: datetime
     deleted: bool
 
@@ -56,7 +56,7 @@ class UserSocialSchema(Base):
 class UserNFTCreateSchema(BaseCreate):
     user_id: int
     nft_collection: str
-    nft_id: str
+    nft_id: int
     used: Optional[bool] = False
 
     class Config:
@@ -64,10 +64,10 @@ class UserNFTCreateSchema(BaseCreate):
 
 
 class UserNFTSchema(Base):
-    id: str
+    id: int
     user_id: int
     nft_collection: str
-    nft_id: str
+    nft_id: int
     used: bool
     created_at: datetime
     deleted: bool
