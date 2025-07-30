@@ -147,7 +147,7 @@ class UserNFT(BaseModelC):
 
     user_id = Column(Integer, ForeignKey("users.id"), index=True)
     nft_collection = Column(String)
-    nft_id = Column(String)
+    nft_id = Column(Integer)
     used = Column(Boolean, default=False)
 
 
