@@ -6,6 +6,7 @@ from routers.additional_endpoints import additional_router
 from routers.auth_router import router as auth_router
 from routers.box_router import box_router
 from routers.dashboard import router as dashboard_router
+from routers.public_router import router as public_router
 from routers.user_router import router as user_router
 
 Base.metadata.create_all(bind=engine)
@@ -35,6 +36,7 @@ api_router.include_router(dashboard_router, prefix="/dashboard", tags=["Dashboar
 api_router.include_router(additional_router)
 api_router.include_router(box_router)
 api_router.include_router(user_router, prefix="/user", tags=["User"])
+api_router.include_router(public_router, prefix="/public", tags=["Public"])
 
 app.include_router(api_router)
 

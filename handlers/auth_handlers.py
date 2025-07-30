@@ -51,7 +51,6 @@ def get_current_admin(token: str = Depends(oauth2_scheme), db: Session = Depends
         payload = decode_access_token(token)
 
         username = payload.get("username")
-        print(username)
         if username is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -59,7 +58,6 @@ def get_current_admin(token: str = Depends(oauth2_scheme), db: Session = Depends
             )
 
         admin = db.query(Admin).filter(Admin.username == username).first()
-        print(admin)
         if admin is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
