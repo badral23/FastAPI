@@ -147,12 +147,22 @@ async def add_social(
         platform=social.platform,
         handle=social.handle
     )
-
     db.add(new_social)
     db.commit()
 
-    current_user.key_count += 1
-    db.commit()
+    connected_socials = db.query(UserSocial).filter(
+        UserSocial.user_id == current_user.id,
+        UserSocial.platform.in_(valid_platforms)
+    ).count()
+
+    if connected_socials == 3:
+        current_user.key_count += 1
+        db.commit()
+
+        return JSONResponse(
+            content={"message": f"Congratulations! All three socials are now connected! You’ve earned 1 key."},
+            status_code=status.HTTP_200_OK
+        )
 
     return JSONResponse(
         content={"message": f"{social.platform.capitalize()} handle added successfully!"},
