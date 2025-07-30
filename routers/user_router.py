@@ -94,10 +94,9 @@ async def check_nfts_for_user(
             db.add(user_nft)
             new_nfts.append(nft)
 
+    current_user.key_count += len(new_nfts)
     db.commit()
     db.refresh(current_user)
-
-    current_user.key_count += len(new_nfts)
 
     return {"message": f"Key count updated. Owned NFTs: {len(new_nfts)}", "key_count": current_user.key_count}
 
