@@ -1,13 +1,13 @@
 import logging
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
-from sqlalchemy.orm import Session
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy import text
+
 from fastapi import HTTPException
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from models import Box, User, UserNFT, UserSocial
-from database_utils import retry_db_operation
 
 logger = logging.getLogger(__name__)
 
@@ -97,14 +97,14 @@ class BoxOpeningService:
             # Use FOR UPDATE SKIP LOCKED for atomic box assignment
             # SQLAlchemy will handle the transaction automatically
             result = db.execute(text("""
-                SELECT id, position, reward_type, reward_tier, reward_data, reward_description
-                FROM boxes 
-                WHERE is_opened = false 
-                  AND deleted = false
-                ORDER BY position 
-                LIMIT 1 
-                FOR UPDATE SKIP LOCKED
-            """))
+                                     SELECT id, position, reward_type, reward_tier, reward_data, reward_description
+                                     FROM boxes
+                                     WHERE is_opened = false
+                                       AND deleted = false
+                                     ORDER BY position LIMIT 1 
+                FOR
+                                     UPDATE SKIP LOCKED
+                                     """))
 
             box_row = result.fetchone()
 
@@ -117,16 +117,16 @@ class BoxOpeningService:
             current_time = datetime.now(timezone.utc)
 
             db.execute(text("""
-                UPDATE boxes 
-                SET is_opened = true,
-                    opened_by_user_id = :user_id,
-                    opened_at = :opened_at
-                WHERE id = :box_id
-            """), {
-                "user_id": user.id,
-                "opened_at": current_time,
-                "box_id": box_id
-            })
+                            UPDATE boxes
+                            SET is_opened         = true,
+                                opened_by_user_id = :user_id,
+                                opened_at         = :opened_at
+                            WHERE id = :box_id
+                            """), {
+                           "user_id": user.id,
+                           "opened_at": current_time,
+                           "box_id": box_id
+                       })
 
             # Flush to ensure the update is applied
             db.flush()
@@ -192,9 +192,8 @@ class BoxOpeningService:
         """
         try:
             # Step 1: Calculate available keys
-            key_info = BoxOpeningService.calculate_user_keys(user, db)
 
-            if key_info["total_available"] <= 0:
+            if user.key_count <= 0:
                 raise HTTPException(
                     status_code=400,
                     detail="No keys available. Complete social tasks or verify NFT ownership to earn keys."
@@ -214,14 +213,17 @@ class BoxOpeningService:
             nfts_marked = []
             key_source = "social"
 
-            if key_info["nft_keys"] > 0:
-                # Use NFT key - mark one NFT as used
-                nfts_marked = BoxOpeningService.mark_user_nfts_as_used(user, db, 1)
-                key_source = "nft"
+            # if user.key_count > 0:
+            #     # Use NFT key - mark one NFT as used
+            #     nfts_marked = BoxOpeningService.mark_user_nfts_as_used(user, db, 1)
+            #     key_source = "nft"
             # Social keys don't need marking (they're permanent once earned)
 
             # Step 4: Commit all changes in one transaction
+            user.key_count -= 1
+
             db.commit()
+            db.refresh(user)
 
             # Step 5: Log the box opening
             logger.info(f"User {user.id} opened box {assigned_box.position} using {key_source} key")
@@ -328,12 +330,12 @@ class BoxOpeningService:
 
             # Reward type distribution of opened boxes
             reward_distribution = db.execute(text("""
-                SELECT reward_type, COUNT(*) as count
-                FROM boxes 
-                WHERE is_opened = true AND deleted = false
-                GROUP BY reward_type
-                ORDER BY count DESC
-            """)).fetchall()
+                                                  SELECT reward_type, COUNT(*) as count
+                                                  FROM boxes
+                                                  WHERE is_opened = true AND deleted = false
+                                                  GROUP BY reward_type
+                                                  ORDER BY count DESC
+                                                  """)).fetchall()
 
             # Next box to be opened
             next_box = db.query(Box).filter(
