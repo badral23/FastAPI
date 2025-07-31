@@ -1,13 +1,11 @@
+# Complete models.py - Replace your models.py with this
+
 from datetime import datetime, timezone
-
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Index, ForeignKey, JSON, Text
-from sqlalchemy.orm import Session, declared_attr
-
+from sqlalchemy.orm import Session, declared_attr, relationship
 from database import Base
 
-
-
-
+# Your existing base model classes (keep these as they are)
 class BaseModelC(Base):
     __abstract__ = True
 
@@ -128,6 +126,7 @@ class BaseModelCU(BaseModelC):
         return self
 
 
+# Your existing models with updates
 class Admin(BaseModelCU):
     __tablename__ = "admins"
 
@@ -161,6 +160,7 @@ class UserSocial(BaseModelC):
     handle = Column(String)
 
 
+# Updated Box class with assignment fields
 class Box(BaseModelC):
     __tablename__ = "boxes"
 
@@ -175,6 +175,80 @@ class Box(BaseModelC):
     opened_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     opened_at = Column(DateTime, nullable=True)
 
+    # NEW ASSIGNMENT FIELDS
+    assigned_to_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    assigned_at = Column(DateTime, nullable=True)
+
+    @classmethod
+    def get_unassigned_box_by_position(cls, db: Session, position: int):
+        """Get an unassigned box by position"""
+        return db.query(cls).filter(
+            cls.position == position,
+            cls.assigned_to_user_id.is_(None),
+            cls.deleted == False
+        ).first()
+
+    @classmethod
+    def get_assigned_box(cls, db: Session, user_id: int, position: int):
+        """Get a box assigned to a specific user"""
+        return db.query(cls).filter(
+            cls.position == position,
+            cls.assigned_to_user_id == user_id,
+            cls.deleted == False
+        ).first()
+
+    @classmethod
+    def get_user_assigned_boxes(cls, db: Session, user_id: int, include_opened: bool = True):
+        """Get all boxes assigned to a user"""
+        query = db.query(cls).filter(
+            cls.assigned_to_user_id == user_id,
+            cls.deleted == False
+        )
+
+        if not include_opened:
+            query = query.filter(cls.is_opened == False)
+
+        return query.order_by(cls.assigned_at.desc()).all()
+
+    @classmethod
+    def get_box_stats(cls, db: Session):
+        """Get box assignment and opening statistics"""
+        from sqlalchemy import func, case
+
+        stats = db.query(
+            func.count(cls.id).label('total_boxes'),
+            func.count(case((cls.assigned_to_user_id.isnot(None), 1))).label('assigned_boxes'),
+            func.count(case((cls.is_opened == True, 1))).label('opened_boxes'),
+            func.count(case((cls.assigned_to_user_id.is_(None), 1))).label('unassigned_boxes')
+        ).filter(cls.deleted == False).first()
+
+        return stats
+
+    def assign_to_user(self, db: Session, user_id: int):
+        """Assign this box to a user"""
+        if self.assigned_to_user_id:
+            raise ValueError(f"Box #{self.position} is already assigned")
+
+        if self.is_opened:
+            raise ValueError(f"Box #{self.position} has already been opened")
+
+        self.assigned_to_user_id = user_id
+        self.assigned_at = datetime.now(timezone.utc)
+        return self.save(db)
+
+    def open_box(self, db: Session, user_id: int):
+        """Open this box"""
+        if self.assigned_to_user_id != user_id:
+            raise ValueError(f"Box #{self.position} is not assigned to this user")
+
+        if self.is_opened:
+            raise ValueError(f"Box #{self.position} has already been opened")
+
+        self.is_opened = True
+        self.opened_by_user_id = user_id
+        self.opened_at = datetime.now(timezone.utc)
+        return self.save(db)
+
 
 class SupportedNFTCollection(BaseModelCU):
     __tablename__ = "supported_nft_collections"
@@ -184,16 +258,3 @@ class SupportedNFTCollection(BaseModelCU):
     description = Column(Text, nullable=True)
     image_url = Column(String, nullable=True)
     website_url = Column(String, nullable=True)
-
-
-class BoxQueue(BaseModelC):
-    __tablename__ = "box_queue"
-
-    box_id = Column(Integer, ForeignKey("boxes.id"), unique=True, nullable=False)
-    position = Column(Integer, nullable=False)
-    reward_type = Column(String, nullable=False)
-
-    __table_args__ = (
-        Index("idx_box_queue_position", "position"),
-        Index("idx_box_queue_box_id", "box_id"),
-    )
