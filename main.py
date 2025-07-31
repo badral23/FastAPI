@@ -1,3 +1,6 @@
+import os
+
+from dotenv import load_dotenv
 from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -11,6 +14,9 @@ from routers.user_router import router as user_router
 
 Base.metadata.create_all(bind=engine)
 
+load_dotenv()
+
+FRONTEND_URL = os.getenv("FRONTEND_URL")
 # Initialize FastAPI app
 app = FastAPI(
     title="Hii Box API",
@@ -21,7 +27,7 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", FRONTEND_URL],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
