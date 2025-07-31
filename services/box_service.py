@@ -231,8 +231,8 @@ class BoxOpeningService:
                 "total_boxes": total_boxes,
                 "assigned_boxes": assigned_boxes,
                 "opened_boxes": opened_boxes,
-                "unassigned_boxes": unassigned_boxes,
-                "assignment_percentage": round((assigned_boxes / total_boxes) * 100, 2) if total_boxes > 0 else 0,
+                "available-boxes": unassigned_boxes,
+                "campaign_percentage": round((assigned_boxes / total_boxes) * 100, 2) if total_boxes > 0 else 0,
                 "opening_percentage": round((opened_boxes / total_boxes) * 100, 2) if total_boxes > 0 else 0,
                 "reward_distribution": reward_distribution
             }
