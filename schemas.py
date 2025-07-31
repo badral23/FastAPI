@@ -139,12 +139,11 @@ class BoxOpenResponse(Base):
 
 
 class BoxStatsResponse(Base):
-    """Response for box statistics"""
     total_boxes: int
     assigned_boxes: int
     opened_boxes: int
-    unassigned_boxes: int
-    assignment_percentage: float
+    available_boxes: int  # Changed from unassigned_boxes
+    campaign_percentage: float  # Changed from assignment_percentage
     opening_percentage: float
     reward_distribution: Dict[str, int]
 
