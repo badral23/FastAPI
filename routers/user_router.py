@@ -69,7 +69,7 @@ async def check_nfts_for_user(
 
     if not owned_nfts:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=status.HTTP_400_NOT_FOUND,
             detail="User does not own any NFTs from the specified collections"
         )
 
