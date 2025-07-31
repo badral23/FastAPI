@@ -14,47 +14,52 @@ logger = logging.getLogger(__name__)
 
 class BoxOpeningService:
     """
-    Service for handling box opening operations with atomic guarantees
+    High-performance service for handling box opening operations
+    All methods optimized for speed and concurrency
     """
 
     @staticmethod
     def calculate_user_keys(user: User, db: Session) -> Dict[str, Any]:
         """
-        Calculate total available keys for a user based on social tasks and NFT ownership
+        OPTIMIZED: Calculate user keys with single query
         """
         try:
-            # Social verification: All 3 tasks completed = 1 key
-            social_accounts = db.query(UserSocial).filter(
-                UserSocial.user_id == user.id,
-                UserSocial.deleted.is_(False)
-            ).all()
+            result = db.execute(text("""
+                SELECT 
+                    COUNT(DISTINCT CASE WHEN us.platform IN ('twitter', 'discord', 'telegram') 
+                                       AND us.deleted = false THEN us.platform END) as social_platforms,
+                    COUNT(CASE WHEN un.used = false AND un.deleted = false THEN 1 END) as unused_nfts,
+                    STRING_AGG(DISTINCT us.platform, ',') as completed_platforms
+                FROM users u
+                LEFT JOIN user_social us ON u.id = us.user_id AND us.deleted = false
+                LEFT JOIN user_nft un ON u.id = un.user_id AND un.deleted = false
+                WHERE u.id = :user_id
+                GROUP BY u.id
+            """), {"user_id": user.id})
 
-            # Check if user has completed all required social tasks
-            platforms_completed = set()
-            for social in social_accounts:
-                platforms_completed.add(social.platform.lower())
+            row = result.fetchone()
 
-            # Required platforms: twitter, discord, telegram
+            if not row:
+                social_platforms = 0
+                unused_nfts = 0
+                completed_platforms = []
+            else:
+                social_platforms = row[0] or 0
+                unused_nfts = row[1] or 0
+                completed_platforms = (row[2] or "").split(",") if row[2] else []
+
+            # Calculate keys
             required_platforms = {"twitter", "discord", "telegram"}
-            social_tasks_completed = required_platforms.issubset(platforms_completed)
+            social_tasks_completed = social_platforms >= 3
             social_keys = 1 if social_tasks_completed else 0
 
-            # NFT verification: Count unused NFTs
-            unused_nfts = db.query(UserNFT).filter(
-                UserNFT.user_id == user.id,
-                UserNFT.used.is_(False),
-                UserNFT.deleted.is_(False)
-            ).all()
-
-            nft_count = len(unused_nfts)
-
-            # FIXED: NFT key calculation per specification
-            if nft_count == 0:
+            # NFT key calculation per specification
+            if unused_nfts == 0:
                 nft_keys = 0
-            elif nft_count == 1:
+            elif unused_nfts == 1:
                 nft_keys = 2  # Minimum 2 keys for 1 NFT
             else:
-                nft_keys = min(nft_count, 10)  # 1 key per NFT, max 10
+                nft_keys = min(unused_nfts, 10)  # 1 key per NFT, max 10
 
             total_available = social_keys + nft_keys
 
@@ -63,24 +68,10 @@ class BoxOpeningService:
                 "nft_keys": nft_keys,
                 "total_available": total_available,
                 "social_completed": social_tasks_completed,
-                "nft_count": nft_count,
-                "unused_nft_count": nft_count,
-                "platforms_completed": list(platforms_completed),
-                "required_platforms": list(required_platforms),
-                "breakdown": {
-                    "social_tasks": {
-                        "completed": social_tasks_completed,
-                        "platforms": list(platforms_completed),
-                        "missing_platforms": list(required_platforms - platforms_completed),
-                        "keys_earned": social_keys
-                    },
-                    "nft_ownership": {
-                        "total_nfts": nft_count,
-                        "unused_nfts": nft_count,
-                        "keys_earned": nft_keys,
-                        "key_calculation": f"{nft_count} NFTs -> {nft_keys} keys"
-                    }
-                }
+                "nft_count": unused_nfts,
+                "unused_nft_count": unused_nfts,
+                "platforms_completed": [p for p in completed_platforms if p],
+                "required_platforms": list(required_platforms)
             }
 
         except Exception as e:
@@ -90,93 +81,110 @@ class BoxOpeningService:
     @staticmethod
     def assign_next_box_atomically(user: User, db: Session) -> Optional[Box]:
         """
-        FIXED: Atomically assign the next available box to a user
-        Removed manual db.begin() to fix transaction error
+        LIGHTNING FAST: Atomic counter-based box assignment
+        Target: <200ms response time
         """
         try:
-            # Use FOR UPDATE SKIP LOCKED for atomic box assignment
-            # SQLAlchemy will handle the transaction automatically
-            result = db.execute(text("""
-                                     SELECT id, position, reward_type, reward_tier, reward_data, reward_description
-                                     FROM boxes
-                                     WHERE is_opened = false
-                                       AND deleted = false
-                                     ORDER BY position LIMIT 1 
-                FOR
-                                     UPDATE SKIP LOCKED
-                                     """))
-
-            box_row = result.fetchone()
-
-            if not box_row:
-                logger.warning("No available boxes for assignment")
-                return None
-
-            # Update the box as opened
-            box_id = box_row[0]
             current_time = datetime.now(timezone.utc)
 
-            db.execute(text("""
-                            UPDATE boxes
-                            SET is_opened         = true,
-                                opened_by_user_id = :user_id,
-                                opened_at         = :opened_at
-                            WHERE id = :box_id
-                            """), {
-                           "user_id": user.id,
-                           "opened_at": current_time,
-                           "box_id": box_id
-                       })
+            # Step 1: Atomically get next position using counter
+            result = db.execute(text("""
+                UPDATE box_counter 
+                SET next_position = next_position + 1
+                WHERE id = 1 AND next_position <= total_boxes
+                RETURNING next_position - 1 as assigned_position
+            """))
 
-            # Flush to ensure the update is applied
-            db.flush()
+            counter_row = result.fetchone()
+            if not counter_row:
+                logger.warning("No more boxes available (counter exhausted)")
+                return None
 
-            # Fetch the updated box object
-            assigned_box = db.query(Box).filter(Box.id == box_id).first()
+            assigned_position = counter_row[0]
 
-            logger.info(f"Successfully assigned box {assigned_box.position} to user {user.id}")
+            # Step 2: Update specific box by position (no table scan)
+            result = db.execute(text("""
+                UPDATE boxes 
+                SET is_opened = true,
+                    opened_by_user_id = :user_id,
+                    opened_at = :opened_at
+                WHERE position = :position AND is_opened = false AND deleted = false
+                RETURNING id, position, reward_type, reward_tier, reward_data, reward_description
+            """), {
+                "user_id": user.id,
+                "opened_at": current_time,
+                "position": assigned_position
+            })
+
+            box_row = result.fetchone()
+            if not box_row:
+                logger.error(f"Box at position {assigned_position} not found or already opened")
+                return None
+
+            # Create lightweight box object
+            class FastBox:
+                def __init__(self, data):
+                    self.id = data[0]
+                    self.position = data[1]
+                    self.reward_type = data[2]
+                    self.reward_tier = data[3]
+                    self.reward_data = data[4]
+                    self.reward_description = data[5]
+                    self.opened_at = current_time
+                    self.is_opened = True
+                    self.opened_by_user_id = user.id
+
+            assigned_box = FastBox(box_row)
+            logger.info(f"Fast assignment: box {assigned_position} to user {user.id}")
             return assigned_box
 
         except SQLAlchemyError as e:
-            logger.error(f"Database error in assign_next_box_atomically: {e}")
+            logger.error(f"Database error in box assignment: {e}")
             raise HTTPException(status_code=500, detail="Database error during box assignment")
         except Exception as e:
-            logger.error(f"Unexpected error in assign_next_box_atomically: {e}")
+            logger.error(f"Unexpected error in box assignment: {e}")
             raise HTTPException(status_code=500, detail="Unexpected error during box assignment")
 
     @staticmethod
     def mark_user_nfts_as_used(user: User, db: Session, nft_count_to_use: int = 1) -> List[Dict[str, Any]]:
         """
-        FIXED: Mark user's NFTs as used to prevent double-spending
-        Returns list of NFTs that were marked as used
+        OPTIMIZED: Mark NFTs as used with single query
         """
         try:
-            # Get unused NFTs (ordered by creation date for fairness)
-            unused_nfts = db.query(UserNFT).filter(
-                UserNFT.user_id == user.id,
-                UserNFT.used.is_(False),
-                UserNFT.deleted.is_(False)
-            ).order_by(UserNFT.created_at).limit(nft_count_to_use).all()
-
-            if len(unused_nfts) < nft_count_to_use:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Not enough unused NFTs. Need {nft_count_to_use}, have {len(unused_nfts)}"
+            result = db.execute(text("""
+                WITH nfts_to_mark AS (
+                    SELECT id, nft_collection, nft_id
+                    FROM user_nft
+                    WHERE user_id = :user_id 
+                      AND used = false 
+                      AND deleted = false
+                    ORDER BY created_at
+                    LIMIT :limit
+                    FOR UPDATE SKIP LOCKED
                 )
+                UPDATE user_nft
+                SET used = true
+                FROM nfts_to_mark
+                WHERE user_nft.id = nfts_to_mark.id
+                RETURNING user_nft.id, nfts_to_mark.nft_collection, nfts_to_mark.nft_id
+            """), {
+                "user_id": user.id,
+                "limit": nft_count_to_use
+            })
 
-            # Mark them as used
             marked_nfts = []
-            for nft in unused_nfts:
-                nft.used = True
-                db.add(nft)
+            for row in result:
                 marked_nfts.append({
-                    "id": nft.id,
-                    "collection": nft.nft_collection,
-                    "nft_id": nft.nft_id
+                    "id": row[0],
+                    "collection": row[1],
+                    "nft_id": row[2]
                 })
 
-            # Flush to ensure updates are applied
-            db.flush()
+            if len(marked_nfts) < nft_count_to_use:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Not enough unused NFTs. Need {nft_count_to_use}, have {len(marked_nfts)}"
+                )
 
             logger.info(f"Marked {len(marked_nfts)} NFTs as used for user {user.id}")
             return marked_nfts
@@ -188,18 +196,18 @@ class BoxOpeningService:
     @staticmethod
     def open_box(user: User, db: Session) -> Dict[str, Any]:
         """
-        FIXED: Main box opening function with proper transaction handling
+        LIGHTNING FAST: Main box opening function
+        Target: <200ms response time with high concurrency support
         """
         try:
-            # Step 1: Calculate available keys
-
+            # Quick validation
             if user.key_count <= 0:
                 raise HTTPException(
                     status_code=400,
                     detail="No keys available. Complete social tasks or verify NFT ownership to earn keys."
                 )
 
-            # Step 2: Atomically assign next available box
+            # Atomic box assignment
             assigned_box = BoxOpeningService.assign_next_box_atomically(user, db)
 
             if not assigned_box:
@@ -208,28 +216,20 @@ class BoxOpeningService:
                     detail="No boxes available. All boxes have been opened!"
                 )
 
-            # Step 3: Consume one key by marking NFTs as used
-            # Priority: Use NFT keys first (more valuable), then social keys
-            nfts_marked = []
-            key_source = "social"
-
-            # if user.key_count > 0:
-            #     # Use NFT key - mark one NFT as used
-            #     nfts_marked = BoxOpeningService.mark_user_nfts_as_used(user, db, 1)
-            #     key_source = "nft"
-            # Social keys don't need marking (they're permanent once earned)
-
-            # Step 4: Commit all changes in one transaction
+            # Update user key count
             user.key_count -= 1
+            db.add(user)
 
+            # Commit all changes
             db.commit()
             db.refresh(user)
 
-            # Step 5: Log the box opening
-            logger.info(f"User {user.id} opened box {assigned_box.position} using {key_source} key")
+            logger.info(f"User {user.id} opened box {assigned_box.position}")
 
-            # Step 6: Prepare response
-            response = {
+            # Calculate remaining keys properly
+            key_info = BoxOpeningService.calculate_user_keys(user, db)
+
+            return {
                 "success": True,
                 "box": {
                     "id": assigned_box.id,
@@ -243,22 +243,19 @@ class BoxOpeningService:
                 "user": {
                     "id": user.id,
                     "wallet_address": user.wallet_address,
+                    "remaining_keys": user.key_count
                 },
                 "key_consumption": {
-                    "key_source": key_source,
-                    "nfts_used": nfts_marked,
-                    "remaining_keys": BoxOpeningService.calculate_user_keys(user, db)["total_available"]
+                    "key_source": "social",
+                    "nfts_used": [],
+                    "remaining_keys": key_info["total_available"]
                 },
-                "message": f"Congratulations! You opened box #{assigned_box.position} and won: {assigned_box.reward_description}"
+                "message": f"🎉 Box #{assigned_box.position} opened! {assigned_box.reward_description}"
             }
 
-            return response
-
         except HTTPException:
-            # Re-raise HTTP exceptions (these have proper error messages)
             raise
         except Exception as e:
-            # Rollback transaction on any error
             db.rollback()
             logger.error(f"Unexpected error in open_box for user {user.id}: {e}")
             raise HTTPException(status_code=500, detail="Unexpected error during box opening")
@@ -266,29 +263,41 @@ class BoxOpeningService:
     @staticmethod
     def get_user_opened_boxes(user: User, db: Session, limit: int = 50, offset: int = 0) -> Dict[str, Any]:
         """
-        Get list of boxes opened by a user
+        OPTIMIZED: Get user's opened boxes with single query
         """
         try:
-            # Get user's opened boxes
-            opened_boxes_query = db.query(Box).filter(
-                Box.opened_by_user_id == user.id,
-                Box.is_opened.is_(True),
-                Box.deleted.is_(False)
-            ).order_by(Box.opened_at.desc())
-
-            total_count = opened_boxes_query.count()
-            opened_boxes = opened_boxes_query.offset(offset).limit(limit).all()
+            result = db.execute(text("""
+                SELECT 
+                    id, position, reward_type, reward_tier, reward_data, 
+                    reward_description, opened_at,
+                    COUNT(*) OVER() as total_count
+                FROM boxes
+                WHERE opened_by_user_id = :user_id 
+                  AND is_opened = true 
+                  AND deleted = false
+                ORDER BY opened_at DESC
+                LIMIT :limit OFFSET :offset
+            """), {
+                "user_id": user.id,
+                "limit": limit,
+                "offset": offset
+            })
 
             boxes_data = []
-            for box in opened_boxes:
+            total_count = 0
+
+            for row in result:
+                if total_count == 0:
+                    total_count = row[7]
+
                 boxes_data.append({
-                    "id": box.id,
-                    "position": box.position,
-                    "reward_type": box.reward_type,
-                    "reward_tier": box.reward_tier,
-                    "reward_data": box.reward_data,
-                    "reward_description": box.reward_description,
-                    "opened_at": box.opened_at.isoformat()
+                    "id": row[0],
+                    "position": row[1],
+                    "reward_type": row[2],
+                    "reward_tier": row[3],
+                    "reward_data": row[4],
+                    "reward_description": row[5],
+                    "opened_at": row[6].isoformat() if row[6] else None
                 })
 
             return {
@@ -313,47 +322,151 @@ class BoxOpeningService:
     @staticmethod
     def get_box_opening_stats(db: Session) -> Dict[str, Any]:
         """
-        Get overall statistics about box openings
+        OPTIMIZED: Get statistics with single complex query
         """
         try:
-            # Total boxes
-            total_boxes = db.query(Box).filter(Box.deleted.is_(False)).count()
+            result = db.execute(text("""
+                WITH stats AS (
+                    SELECT 
+                        COUNT(*) as total_boxes,
+                        COUNT(CASE WHEN is_opened = true THEN 1 END) as opened_boxes,
+                        COUNT(CASE WHEN is_opened = false THEN 1 END) as available_boxes,
+                        MIN(CASE WHEN is_opened = false THEN position END) as next_position
+                    FROM boxes 
+                    WHERE deleted = false
+                ),
+                reward_stats AS (
+                    SELECT 
+                        reward_type,
+                        COUNT(*) as count
+                    FROM boxes
+                    WHERE is_opened = true AND deleted = false
+                    GROUP BY reward_type
+                )
+                SELECT 
+                    s.total_boxes,
+                    s.opened_boxes, 
+                    s.available_boxes,
+                    s.next_position,
+                    COALESCE(
+                        json_object_agg(rs.reward_type, rs.count) FILTER (WHERE rs.reward_type IS NOT NULL),
+                        '{}'::json
+                    ) as reward_distribution
+                FROM stats s
+                LEFT JOIN reward_stats rs ON true
+                GROUP BY s.total_boxes, s.opened_boxes, s.available_boxes, s.next_position
+            """))
 
-            # Opened boxes
-            opened_boxes = db.query(Box).filter(
-                Box.is_opened.is_(True),
-                Box.deleted.is_(False)
-            ).count()
+            row = result.fetchone()
+            if not row:
+                return {"error": "No data available"}
 
-            # Available boxes
-            available_boxes = total_boxes - opened_boxes
-
-            # Reward type distribution of opened boxes
-            reward_distribution = db.execute(text("""
-                                                  SELECT reward_type, COUNT(*) as count
-                                                  FROM boxes
-                                                  WHERE is_opened = true AND deleted = false
-                                                  GROUP BY reward_type
-                                                  ORDER BY count DESC
-                                                  """)).fetchall()
-
-            # Next box to be opened
-            next_box = db.query(Box).filter(
-                Box.is_opened.is_(False),
-                Box.deleted.is_(False)
-            ).order_by(Box.position).first()
+            total_boxes = row[0] or 0
+            opened_boxes = row[1] or 0
+            available_boxes = row[2] or 0
+            next_position = row[3]
+            reward_distribution = row[4] or {}
 
             return {
                 "total_boxes": total_boxes,
                 "opened_boxes": opened_boxes,
                 "available_boxes": available_boxes,
                 "completion_percentage": round((opened_boxes / total_boxes) * 100, 2) if total_boxes > 0 else 0,
-                "next_box_position": next_box.position if next_box else None,
-                "reward_distribution": {
-                    row[0]: row[1] for row in reward_distribution
-                }
+                "next_box_position": next_position,
+                "reward_distribution": reward_distribution
             }
 
         except Exception as e:
             logger.error(f"Error getting box opening stats: {e}")
             raise HTTPException(status_code=500, detail="Error retrieving box opening statistics")
+
+    @staticmethod
+    def initialize_system(db: Session) -> Dict[str, Any]:
+        """
+        SETUP: Initialize the high-performance box system
+        Run this once after populating your boxes
+        """
+        try:
+            # Create counter table
+            db.execute(text("""
+                CREATE TABLE IF NOT EXISTS box_counter (
+                    id INTEGER PRIMARY KEY DEFAULT 1,
+                    next_position INTEGER NOT NULL DEFAULT 1,
+                    total_boxes INTEGER NOT NULL DEFAULT 50000,
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    updated_at TIMESTAMP DEFAULT NOW(),
+                    CONSTRAINT single_row CHECK (id = 1)
+                );
+            """))
+
+            # Initialize counter
+            db.execute(text("""
+                INSERT INTO box_counter (id, next_position, total_boxes) 
+                VALUES (1, 1, 50000) 
+                ON CONFLICT (id) DO UPDATE SET
+                    next_position = 1,
+                    total_boxes = 50000,
+                    updated_at = NOW();
+            """))
+
+            # Add performance indexes
+            db.execute(text("""
+                CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_boxes_position_unopened 
+                ON boxes (position) WHERE is_opened = false AND deleted = false;
+
+                CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_boxes_opened_by_user_time 
+                ON boxes (opened_by_user_id, opened_at) WHERE is_opened = true;
+
+                CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_user_nft_unused 
+                ON user_nft (user_id, used, deleted) WHERE deleted = false;
+
+                CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_user_social_platforms 
+                ON user_social (user_id, platform, deleted) WHERE deleted = false;
+            """))
+
+            db.commit()
+
+            logger.info("High-performance box system initialized")
+            return {
+                "success": True,
+                "message": "System initialized for lightning-fast box opening",
+                "performance": "Expected ~200ms response time with high concurrency"
+            }
+
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error initializing system: {e}")
+            raise HTTPException(status_code=500, detail=f"System initialization failed: {str(e)}")
+
+    @staticmethod
+    def get_system_status(db: Session) -> Dict[str, Any]:
+        """
+        Get current system status for monitoring
+        """
+        try:
+            result = db.execute(text("""
+                SELECT next_position, total_boxes, updated_at
+                FROM box_counter 
+                WHERE id = 1
+            """))
+
+            row = result.fetchone()
+            if not row:
+                return {"error": "System not initialized"}
+
+            next_pos, total, updated = row
+            remaining = total - (next_pos - 1)
+
+            return {
+                "next_position": next_pos,
+                "total_boxes": total,
+                "boxes_opened": next_pos - 1,
+                "boxes_remaining": remaining,
+                "completion_percentage": round(((next_pos - 1) / total) * 100, 2),
+                "last_updated": updated.isoformat() if updated else None,
+                "status": "active" if remaining > 0 else "completed"
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting system status: {e}")
+            return {"error": str(e)}

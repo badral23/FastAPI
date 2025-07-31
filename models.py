@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session, declared_attr
 from database import Base
 
 
+
+
 class BaseModelC(Base):
     __abstract__ = True
 
@@ -182,3 +184,16 @@ class SupportedNFTCollection(BaseModelCU):
     description = Column(Text, nullable=True)
     image_url = Column(String, nullable=True)
     website_url = Column(String, nullable=True)
+
+
+class BoxQueue(BaseModelC):
+    __tablename__ = "box_queue"
+
+    box_id = Column(Integer, ForeignKey("boxes.id"), unique=True, nullable=False)
+    position = Column(Integer, nullable=False)
+    reward_type = Column(String, nullable=False)
+
+    __table_args__ = (
+        Index("idx_box_queue_position", "position"),
+        Index("idx_box_queue_box_id", "box_id"),
+    )
