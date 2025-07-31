@@ -1,4 +1,4 @@
-# Updated routers/box_router.py using ORM and new schemas
+# Updated routers/router.py using ORM and new schemas
 
 from typing import Dict, Any
 
@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 from database import get_db
 from handlers.auth_handlers import get_current_user
 from models import User
-from services.box_service import BoxOpeningService
 from schemas import (
     BoxAssignmentRequest,
     BoxOpenRequest,
@@ -17,11 +16,12 @@ from schemas import (
     UserAssignedBoxesResponse,
     BoxStatsResponse
 )
+from services.box_service import BoxOpeningService
 
-box_router = APIRouter(prefix="/boxes", tags=["Boxes"])
+router = APIRouter()
 
 
-@box_router.post("/assign-from-nft", response_model=BoxAssignmentResponse)
+@router.post("/assign-from-nft", response_model=BoxAssignmentResponse)
 async def assign_box_from_nft(
         request: BoxAssignmentRequest,
         current_user: User = Depends(get_current_user),
@@ -47,7 +47,7 @@ async def assign_box_from_nft(
     )
 
 
-@box_router.post("/open", response_model=BoxOpenResponse)
+@router.post("/open", response_model=BoxOpenResponse)
 async def open_assigned_box(
         request: BoxOpenRequest,
         current_user: User = Depends(get_current_user),
@@ -68,7 +68,7 @@ async def open_assigned_box(
     return BoxOpeningService.open_assigned_box(current_user, request.box_position, db)
 
 
-@box_router.get("/my-boxes", response_model=UserAssignedBoxesResponse)
+@router.get("/my-boxes", response_model=UserAssignedBoxesResponse)
 async def get_my_assigned_boxes(
         current_user: User = Depends(get_current_user),
         db: Session = Depends(get_db)
@@ -85,7 +85,7 @@ async def get_my_assigned_boxes(
     return BoxOpeningService.get_user_assigned_boxes(current_user, db)
 
 
-@box_router.get("/my-opened", response_model=Dict[str, Any])
+@router.get("/my-opened", response_model=Dict[str, Any])
 async def get_my_opened_boxes(
         limit: int = Query(50, ge=1, le=100, description="Number of boxes to return"),
         offset: int = Query(0, ge=0, description="Number of boxes to skip"),
@@ -126,7 +126,7 @@ async def get_my_opened_boxes(
     }
 
 
-@box_router.get("/stats", response_model=BoxStatsResponse)
+@router.get("/stats", response_model=BoxStatsResponse)
 async def get_box_opening_stats(
         db: Session = Depends(get_db)
 ):
@@ -145,7 +145,7 @@ async def get_box_opening_stats(
     return BoxOpeningService.get_box_opening_stats(db)
 
 
-@box_router.get("/calculate-keys", response_model=Dict[str, Any])
+@router.get("/calculate-keys", response_model=Dict[str, Any])
 async def calculate_available_keys(
         current_user: User = Depends(get_current_user),
         db: Session = Depends(get_db)
@@ -162,7 +162,7 @@ async def calculate_available_keys(
     return BoxOpeningService.calculate_user_keys(current_user, db)
 
 
-@box_router.get("/next-available")
+@router.get("/next-available")
 async def get_next_available_box(
         current_user: User = Depends(get_current_user),
         db: Session = Depends(get_db)
@@ -209,7 +209,7 @@ async def get_next_available_box(
         raise HTTPException(status_code=500, detail="Error getting available boxes")
 
 
-@box_router.get("/user/{user_id}/boxes", response_model=Dict[str, Any])
+@router.get("/user/{user_id}/boxes", response_model=Dict[str, Any])
 async def get_user_boxes_admin(
         user_id: int,
         current_user: User = Depends(get_current_user),
@@ -237,7 +237,7 @@ async def get_user_boxes_admin(
     return BoxOpeningService.get_user_assigned_boxes(target_user, db)
 
 
-@box_router.post("/admin/assign-box", response_model=BoxAssignmentResponse)
+@router.post("/admin/assign-box", response_model=BoxAssignmentResponse)
 async def admin_assign_box(
         user_id: int,
         box_position: int,
@@ -267,7 +267,7 @@ async def admin_assign_box(
     return BoxOpeningService.assign_box_to_user(target_user, str(box_position), db)
 
 
-@box_router.get("/position/{position}")
+@router.get("/position/{position}")
 async def get_box_by_position(
         position: int,
         current_user: User = Depends(get_current_user),

@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from database import Base, engine
 from routers.additional_endpoints import additional_router
 from routers.auth_router import router as auth_router
-from routers.box_router import box_router
+from routers.box_router import router as box_router
 from routers.dashboard_router import router as dashboard_router
 from routers.public_router import router as public_router
 from routers.user_router import router as user_router
@@ -40,7 +40,7 @@ api_router.include_router(auth_router, prefix="/auth",
                           tags=["Auth"])
 api_router.include_router(dashboard_router, prefix="/dashboard", tags=["Dashboard"])
 api_router.include_router(additional_router)
-api_router.include_router(box_router)
+api_router.include_router(box_router, prefix="/boxes", tags=["Boxes"])
 api_router.include_router(user_router, prefix="/user", tags=["User"])
 api_router.include_router(public_router, prefix="/public", tags=["Public"])
 
