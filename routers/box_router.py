@@ -53,15 +53,21 @@ async def get_my_opened_boxes(
 
 @box_router.get("/stats", response_model=Dict[str, Any])
 async def get_box_opening_stats(
-        current_user: User = Depends(get_current_user),
         db: Session = Depends(get_db)
 ):
     """
     Get overall box opening statistics.
-    Requires authentication but shows global stats.
+    PUBLIC ENDPOINT - No authentication required.
+    Shows global stats only.
 
     Returns:
-        dict: Global box opening statistics
+        dict: Global box opening statistics including:
+        - Total boxes in system
+        - Number of boxes opened
+        - Number of boxes remaining
+        - Completion percentage
+        - Next box position
+        - Reward distribution breakdown
     """
     return BoxOpeningService.get_box_opening_stats(db)
 
