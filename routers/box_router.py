@@ -102,28 +102,17 @@ async def get_my_opened_boxes(
     Returns:
         Paginated list of opened boxes with full reward details
     """
-    # Get all user's boxes and filter opened ones
-    all_boxes_result = BoxOpeningService.get_user_assigned_boxes(current_user, db)
-    opened_boxes = [box for box in all_boxes_result["boxes"] if box["status"] == "opened"]
+    # Call the correct function for opened boxes
+    result = BoxOpeningService.get_user_opened_boxes(current_user, db, limit, offset)
 
-    # Apply pagination
-    total_opened = len(opened_boxes)
-    paginated_boxes = opened_boxes[offset:offset + limit]
-
-    return {
-        "boxes": paginated_boxes,
-        "pagination": {
-            "total": total_opened,
-            "limit": limit,
-            "offset": offset,
-            "has_more": (offset + limit) < total_opened
-        },
-        "user": {
-            "id": current_user.id,
-            "wallet_address": current_user.wallet_address,
-            "total_boxes_opened": total_opened
-        }
+    # Add user info to the response
+    result["user"] = {
+        "id": current_user.id,
+        "wallet_address": current_user.wallet_address,
+        "total_boxes_opened": result["total_opened"]
     }
+
+    return result
 
 
 @router.get("/stats", response_model=BoxStatsResponse)

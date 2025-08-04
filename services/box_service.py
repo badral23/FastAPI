@@ -156,11 +156,15 @@ class BoxOpeningService:
     @staticmethod
     def get_user_assigned_boxes(user: User, db: Session) -> Dict[str, Any]:
         """
-        Get boxes assigned to user (both opened and unopened) using ORM
+        Get boxes assigned to user that are available to open (assigned but not opened)
         """
         try:
-            # Get all assigned boxes using ORM
-            boxes = Box.get_user_assigned_boxes(db, user.id)
+            # Get only assigned but unopened boxes using ORM
+            boxes = db.query(Box).filter(
+                Box.assigned_to_user_id == user.id,
+                Box.is_opened == False,
+                Box.deleted == False
+            ).order_by(Box.assigned_at.desc()).all()
 
             boxes_data = []
             for box in boxes:
@@ -169,35 +173,71 @@ class BoxOpeningService:
                     "position": box.position,
                     "reward_type": box.reward_type,
                     "reward_tier": box.reward_tier,
-                    "status": "opened" if box.is_opened else "assigned_unopened",
-                    "assigned_at": box.assigned_at.isoformat() if box.assigned_at else None
+                    "status": "assigned_unopened",
+                    "assigned_at": box.assigned_at.isoformat() if box.assigned_at else None,
+                    "reward_description": "Box ready to open"
                 }
-
-                # Only show reward details if opened
-                if box.is_opened:
-                    box_data.update({
-                        "reward_data": box.reward_data,
-                        "reward_description": box.reward_description,
-                        "opened_at": box.opened_at.isoformat() if box.opened_at else None
-                    })
-                else:
-                    box_data["reward_description"] = "Box not opened yet"
-
                 boxes_data.append(box_data)
-
-            opened_count = len([b for b in boxes if b.is_opened])
-            unopened_count = len(boxes) - opened_count
 
             return {
                 "boxes": boxes_data,
                 "total_assigned": len(boxes),
-                "opened_count": opened_count,
-                "unopened_count": unopened_count
+                "opened_count": 0,  # Not showing opened boxes
+                "unopened_count": len(boxes)
             }
 
         except Exception as e:
             logger.error(f"Error getting assigned boxes for user {user.id}: {e}")
             raise HTTPException(status_code=500, detail="Error retrieving assigned boxes")
+
+    @staticmethod
+    def get_user_opened_boxes(user: User, db: Session, limit: int = 50, offset: int = 0) -> Dict[str, Any]:
+        """
+        Get boxes that user has already opened (for viewing rewards history)
+        """
+        try:
+            # Get only opened boxes with pagination
+            boxes = db.query(Box).filter(
+                Box.assigned_to_user_id == user.id,
+                Box.is_opened == True,
+                Box.deleted == False
+            ).order_by(Box.opened_at.desc()).offset(offset).limit(limit).all()
+
+            # Get total count for pagination
+            total_count = db.query(Box).filter(
+                Box.assigned_to_user_id == user.id,
+                Box.is_opened == True,
+                Box.deleted == False
+            ).count()
+
+            boxes_data = []
+            for box in boxes:
+                box_data = {
+                    "id": box.id,
+                    "position": box.position,
+                    "reward_type": box.reward_type,
+                    "reward_tier": box.reward_tier,
+                    "status": "opened",
+                    "reward_data": box.reward_data,
+                    "reward_description": box.reward_description,
+                    "opened_at": box.opened_at.isoformat() if box.opened_at else None,
+                    "assigned_at": box.assigned_at.isoformat() if box.assigned_at else None
+                }
+                boxes_data.append(box_data)
+
+            return {
+                "boxes": boxes_data,
+                "total_opened": total_count,
+                "pagination": {
+                    "limit": limit,
+                    "offset": offset,
+                    "has_more": (offset + limit) < total_count
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting opened boxes for user {user.id}: {e}")
+            raise HTTPException(status_code=500, detail="Error retrieving opened boxes")
 
     @staticmethod
     def get_box_opening_stats(db: Session) -> Dict[str, Any]:
