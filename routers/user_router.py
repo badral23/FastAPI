@@ -62,43 +62,72 @@ async def check_nfts_for_user(
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user)
 ):
+    # Get all supported NFT collection addresses
     nft_collections = db.query(SupportedNFTCollection.collection_address).all()
     nft_collections = [collection.collection_address for collection in nft_collections]
 
+    # Check what NFTs the user owns
     owned_nfts = check_user_nfts(current_user.wallet_address, nft_collections)
 
     if not owned_nfts:
         raise HTTPException(
-            status_code=status.HTTP_400_NOT_FOUND,
+            status_code=status.HTTP_404_NOT_FOUND,  # ← Fixed: was HTTP_400_NOT_FOUND
             detail="User does not own any NFTs from the specified collections"
         )
 
     new_nfts = []
 
+    # Process each owned NFT
     for nft in owned_nfts:
+        # Check if this NFT is already recorded for this user
         existing_nft = db.query(UserNFT).filter(
             UserNFT.user_id == current_user.id,
             UserNFT.nft_collection == nft['collection'],
-            UserNFT.nft_id == nft['nft_id']
+            UserNFT.nft_id == nft['nft_id'],
+            UserNFT.deleted == False  # ← Added: check deleted status
         ).first()
 
         if existing_nft:
+            # NFT already recorded, skip
             continue
         else:
+            # Record new NFT
             user_nft = UserNFT(
                 user_id=current_user.id,
                 nft_collection=nft['collection'],
                 nft_id=nft['nft_id'],
-                used=True
+                used=False  # ← Changed: NFTs start as unused, not used=True
             )
             db.add(user_nft)
             new_nfts.append(nft)
 
-    current_user.key_count += len(new_nfts)
-    db.commit()
-    db.refresh(current_user)
+    # Calculate keys based on new NFTs found
+    if new_nfts:
+        # Award keys based on specification: 2-10 keys for NFT ownership
+        if len(new_nfts) == 1:
+            keys_to_add = 2  # Minimum 2 keys for 1 NFT
+        else:
+            keys_to_add = min(len(new_nfts), 10)  # Max 10 keys total
 
-    return {"message": f"Key count updated. Owned NFTs: {len(new_nfts)}", "key_count": current_user.key_count}
+        current_user.key_count += keys_to_add
+        db.commit()
+        db.refresh(current_user)
+
+        return {
+            "message": f"Found {len(new_nfts)} new NFTs! Earned {keys_to_add} keys.",
+            "new_nfts_found": len(new_nfts),
+            "keys_earned": keys_to_add,
+            "total_key_count": current_user.key_count,
+            "nfts": new_nfts
+        }
+    else:
+        return {
+            "message": "No new NFTs found. All your NFTs are already recorded.",
+            "new_nfts_found": 0,
+            "keys_earned": 0,
+            "total_key_count": current_user.key_count,
+            "total_owned_nfts": len(owned_nfts)
+        }
 
 
 @router.post("/nfts/check-nfts-test")
