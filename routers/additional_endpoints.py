@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from handlers.auth_handlers import get_current_user
-from models import UserSocial, UserNFT, User
+from models import UserSocial, UserNFT, User, Box
 
 additional_router = APIRouter()
 
