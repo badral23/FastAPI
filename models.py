@@ -159,94 +159,78 @@ class UserSocial(BaseModelC):
     platform = Column(String)
     handle = Column(String)
 
-
-# Updated Box class with assignment fields
 class Box(BaseModelC):
     __tablename__ = "boxes"
 
-    position = Column(Integer, unique=True, nullable=False)  # 1 to 50,000
-    reward_type = Column(String, nullable=False)  # "standard_nft", "apecoin", "rare_nft", "apefest_ticket"
-    reward_tier = Column(String, nullable=True)  # For ApeCoin: "tier1", "tier2", "tier3", "tier4"
-    reward_data = Column(JSON, nullable=True)  # Additional reward metadata
-    reward_description = Column(Text, nullable=True)  # Human-readable description
+    position = Column(Integer, unique=True, nullable=False)
+    # 1 to 50,000
+    reward_type = Column(String, nullable=False)
+    # "standard_nft", "apecoin", "rare_nft", "apefest_ticket"
+    reward_tier = Column(String, nullable=True)
+    # For ApeCoin: "tier1", "tier2", "tier3", "tier4"
+    reward_data = Column(JSON, nullable=True)
+    # Additional reward metadata
+    reward_description = Column(Text, nullable=True)
+    # Human-readable description
 
     # Box status
     is_opened = Column(Boolean, default=False)
-    opened_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    # Whether box has been opened
+    owned_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    # User who owns the box after opening (changed from opened_by_user_id)
     opened_at = Column(DateTime, nullable=True)
-
-    # NEW ASSIGNMENT FIELDS
-    assigned_to_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    assigned_at = Column(DateTime, nullable=True)
+    # When box was opened
 
     @classmethod
-    def get_unassigned_box_by_position(cls, db: Session, position: int):
-        """Get an unassigned box by position"""
+    def get_next_available_box(cls, db: Session):
+        """Get the next available (unopened) box in sequential order"""
+        return db.query(cls).filter(
+            cls.is_opened == False,
+            cls.deleted == False
+        ).order_by(cls.position).first()
+
+    @classmethod
+    def get_unopened_box_by_position(cls, db: Session, position: int):
+        """Get an unopened box by specific position"""
         return db.query(cls).filter(
             cls.position == position,
-            cls.assigned_to_user_id.is_(None),
+            cls.is_opened == False,
             cls.deleted == False
         ).first()
 
     @classmethod
-    def get_assigned_box(cls, db: Session, user_id: int, position: int):
-        """Get a box assigned to a specific user"""
+    def get_user_owned_boxes(cls, db: Session, user_id: int):
+        """Get all boxes owned by a specific user (changed from get_user_opened_boxes)"""
         return db.query(cls).filter(
-            cls.position == position,
-            cls.assigned_to_user_id == user_id,
+            cls.owned_by_user_id == user_id,
+            cls.is_opened == True,
             cls.deleted == False
-        ).first()
-
-    @classmethod
-    def get_user_assigned_boxes(cls, db: Session, user_id: int, include_opened: bool = True):
-        """Get all boxes assigned to a user"""
-        query = db.query(cls).filter(
-            cls.assigned_to_user_id == user_id,
-            cls.deleted == False
-        )
-
-        if not include_opened:
-            query = query.filter(cls.is_opened == False)
-
-        return query.order_by(cls.assigned_at.desc()).all()
+        ).order_by(cls.opened_at.desc()).all()
 
     @classmethod
     def get_box_stats(cls, db: Session):
-        """Get box assignment and opening statistics"""
-        from sqlalchemy import func, case
+        """Get box opening statistics"""
+        from sqlalchemy import func
 
         stats = db.query(
             func.count(cls.id).label('total_boxes'),
-            func.count(case((cls.assigned_to_user_id.isnot(None), 1))).label('assigned_boxes'),
-            func.count(case((cls.is_opened == True, 1))).label('opened_boxes'),
-            func.count(case((cls.assigned_to_user_id.is_(None), 1))).label('unassigned_boxes')
+            func.count(func.nullif(cls.is_opened, False)).label('opened_boxes')
         ).filter(cls.deleted == False).first()
 
         return stats
 
-    def assign_to_user(self, db: Session, user_id: int):
-        """Assign this box to a user"""
-        if self.assigned_to_user_id:
-            raise ValueError(f"Box #{self.position} is already assigned")
-
-        if self.is_opened:
-            raise ValueError(f"Box #{self.position} has already been opened")
-
-        self.assigned_to_user_id = user_id
-        self.assigned_at = datetime.now(timezone.utc)
-        return self.save(db)
-
     def open_box(self, db: Session, user_id: int):
-        """Open this box"""
-        if self.assigned_to_user_id != user_id:
-            raise ValueError(f"Box #{self.position} is not assigned to this user")
-
+        """Open this box and assign ownership to user"""
         if self.is_opened:
+            # Box already opened
             raise ValueError(f"Box #{self.position} has already been opened")
 
         self.is_opened = True
-        self.opened_by_user_id = user_id
+        # Set who owns the box after opening (changed from opened_by_user_id)
+        self.owned_by_user_id = user_id
+        # Set when it was opened
         self.opened_at = datetime.now(timezone.utc)
+        # Save changes
         return self.save(db)
 
 

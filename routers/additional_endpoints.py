@@ -50,6 +50,14 @@ async def get_my_campaign_status(
         UserSocial.deleted.is_(False)
     ).count()
 
+    # Count user's owned boxes
+    owned_boxes_count = db.query(Box).filter(
+        Box.owned_by_user_id == current_user.id,
+        # Changed from opened_by_user_id
+        Box.is_opened == True,
+        Box.deleted.is_(False)
+    ).count()
+
     return {
         "wallet_address": current_user.wallet_address,
         "user_id": current_user.id,
@@ -57,7 +65,8 @@ async def get_my_campaign_status(
         "nft_count": nft_count,
         "social_count": social_count,
         "boxes_claimed": 0,  # TODO: implement when box claiming is added
-        "boxes_opened": 0,  # TODO: implement when box opening is added
+        "boxes_owned": owned_boxes_count,
+        # Changed from boxes_opened
         "social_verified": social_count > 0,
         "nft_verified": nft_count > 0,
         "created_at": current_user.created_at,
