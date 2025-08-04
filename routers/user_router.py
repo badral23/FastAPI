@@ -122,7 +122,7 @@ async def check_nfts_for_user(
         }
     else:
         return {
-            "message": "No new NFTs found. All your NFTs are already recorded.",
+            "message": "No new NFTs found. All your NFTs are already recorded..",
             "new_nfts_found": 0,
             "keys_earned": 0,
             "total_key_count": current_user.key_count,
