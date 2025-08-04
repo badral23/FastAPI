@@ -1,11 +1,9 @@
 import logging
-from datetime import datetime, timezone
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 
 from fastapi import HTTPException
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
 from sqlalchemy import func
+from sqlalchemy.orm import Session
 
 from models import Box, User, UserNFT, UserSocial
 
@@ -262,7 +260,6 @@ class BoxOpeningService:
             logger.error(f"Error getting box opening stats: {e}")
             raise HTTPException(status_code=500, detail="Error retrieving box opening statistics")
 
-
     @staticmethod
     def calculate_user_keys(user: User, db: Session) -> Dict[str, Any]:
         """
@@ -332,3 +329,19 @@ class BoxOpeningService:
             raise HTTPException(status_code=500, detail="Error calculating available keys")
 
     # REMOVED: assign_box_to_user, get_user_assigned_boxes, verify_nft_ownership_and_assign
+
+    @staticmethod
+    def get_box_by_box_id(token_id: int, db: Session) -> Optional[Box]:
+        return db.query(Box).filter(Box.id == token_id).first()
+
+    @staticmethod
+    def update_box_ownership(box: Box, new_owner_id: int, db: Session) -> None:
+        try:
+            box.owned_by_user_id = new_owner_id
+            db.commit()
+            db.refresh(box)
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(status_code=500, detail="Error updating box ownership")
+        finally:
+            db.close()
