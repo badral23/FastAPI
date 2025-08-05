@@ -115,39 +115,33 @@ class BoxOpeningService:
     @staticmethod
     def get_user_owned_boxes(user: User, db: Session) -> Dict[str, Any]:
         try:
-            boxes = db.query(Box).filter(
+            boxes_query = db.query(Box).filter(
                 Box.owned_by_user_id == user.id,
                 Box.deleted == False
-            ).order_by(Box.opened_at.desc()).all()
+            )
 
-            total_count = db.query(Box).filter(
-                Box.owned_by_user_id == user.id,
-                Box.deleted == False
-            ).count()
+            boxes = boxes_query.all()
+            total_count = boxes_query.count()
 
-            boxes_data = []
-            for box in boxes:
-                box_data = {
+            boxes_data = [
+                {
                     "id": box.id,
-                    "opened_at": box.opened_at.isoformat() if box.opened_at else None
+                    **(
+                        {
+                            "reward_type": box.reward_type,
+                            "reward_tier": box.reward_tier,
+                            "reward_data": box.reward_data,
+                            "reward_description": box.reward_description,
+                        } if box.is_opened else {
+                            "reward_type": None,
+                            "reward_tier": None,
+                            "reward_data": None,
+                            "reward_description": None
+                        }
+                    )
                 }
-
-                if box.is_opened:
-                    box_data.update({
-                        "reward_type": box.reward_type,
-                        "reward_tier": box.reward_tier,
-                        "reward_data": box.reward_data,
-                        "reward_description": box.reward_description
-                    })
-                else:
-                    box_data.update({
-                        "reward_type": None,
-                        "reward_tier": None,
-                        "reward_data": None,
-                        "reward_description": None
-                    })
-
-                boxes_data.append(box_data)
+                for box in boxes
+            ]
 
             return {
                 "boxes": boxes_data,

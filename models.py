@@ -178,10 +178,8 @@ class Box(BaseModelCU):
     is_opened = Column(Boolean, default=False)
     # Whether box has been opened
     owned_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    # User who owns the box after opening (changed from opened_by_user_id)
-    opened_at = Column(DateTime, nullable=True)
 
-    # When box was opened
+    # User who owns the box after opening (changed from opened_by_user_id)
 
     @classmethod
     def get_next_available_box(cls, db: Session):
@@ -198,7 +196,7 @@ class Box(BaseModelCU):
             cls.owned_by_user_id == user_id,
             cls.is_opened == True,
             cls.deleted == False
-        ).order_by(cls.opened_at.desc()).all()
+        ).all()
 
     @classmethod
     def get_box_stats(cls, db: Session):
@@ -221,8 +219,6 @@ class Box(BaseModelCU):
         self.is_opened = True
         # Set who owns the box after opening (changed from opened_by_user_id)
         self.owned_by_user_id = user_id
-        # Set when it was opened
-        self.opened_at = datetime.now(timezone.utc)
         # Save changes
         return self.save(db)
 

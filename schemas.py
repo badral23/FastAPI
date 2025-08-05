@@ -121,8 +121,6 @@ class BoxSchema(Base):
     # Whether box has been opened
     owned_by_user_id: Optional[int] = None
     # User who owns the box (changed from opened_by_user_id)
-    opened_at: Optional[datetime] = None
-    # When box was opened
     created_at: datetime
     # When box was created
     deleted: bool
@@ -224,8 +222,6 @@ class OwnedBoxSchema(Base):
     # Reward metadata
     reward_description: Optional[str] = None
     # Reward description
-    opened_at: str
-    # When box was opened (ISO string)
 
 
 class UserOwnedBoxesResponseSchema(Base):
