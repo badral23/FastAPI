@@ -113,7 +113,7 @@ class BoxOpeningService:
             raise HTTPException(status_code=500, detail="Error opening specific box")
 
     @staticmethod
-    async def get_user_owned_boxes(user: User, db: Session, opened: bool = None) -> Dict[str, Any]:
+    def get_user_owned_boxes(user: User, db: Session, opened: bool = None) -> Dict[str, Any]:
         try:
             boxes_query = db.query(Box).filter(
                 Box.owned_by_user_id == user.id,
