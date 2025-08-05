@@ -113,12 +113,15 @@ class BoxOpeningService:
             raise HTTPException(status_code=500, detail="Error opening specific box")
 
     @staticmethod
-    def get_user_owned_boxes(user: User, db: Session) -> Dict[str, Any]:
+    async def get_user_owned_boxes(user: User, db: Session, opened: bool = None) -> Dict[str, Any]:
         try:
             boxes_query = db.query(Box).filter(
                 Box.owned_by_user_id == user.id,
                 Box.deleted == False
             )
+
+            if opened is not None:
+                boxes_query = boxes_query.filter(Box.is_opened == opened)
 
             boxes = boxes_query.all()
             total_count = boxes_query.count()
@@ -126,19 +129,10 @@ class BoxOpeningService:
             boxes_data = [
                 {
                     "id": box.id,
-                    **(
-                        {
-                            "reward_type": box.reward_type,
-                            "reward_tier": box.reward_tier,
-                            "reward_data": box.reward_data,
-                            "reward_description": box.reward_description,
-                        } if box.is_opened else {
-                            "reward_type": None,
-                            "reward_tier": None,
-                            "reward_data": None,
-                            "reward_description": None
-                        }
-                    )
+                    "reward_type": box.reward_type if box.is_opened else None,
+                    "reward_tier": box.reward_tier if box.is_opened else None,
+                    "reward_data": box.reward_data if box.is_opened else None,
+                    "reward_description": box.reward_description if box.is_opened else None
                 }
                 for box in boxes
             ]
@@ -149,7 +143,7 @@ class BoxOpeningService:
             }
 
         except Exception as e:
-            logger.error(f"Error getting owned boxes for user {user.id}: {e}")
+            logger.error(f"Error retrieving owned boxes for user {user.id}: {str(e)}")
             raise HTTPException(status_code=500, detail="Error retrieving owned boxes")
 
     @staticmethod

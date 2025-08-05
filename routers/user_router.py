@@ -255,7 +255,15 @@ async def get_my_owned_boxes(
         current_user: User = Depends(get_current_user),
         db: Session = Depends(get_db)
 ):
-    return BoxOpeningService.get_user_owned_boxes(current_user, db)
+    return BoxOpeningService.get_user_owned_boxes(current_user, db, opened=False)
+
+
+@router.get("/my-opened", response_model=Dict[str, Any])
+async def get_my_owned_boxes(
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
+    return BoxOpeningService.get_user_owned_boxes(current_user, db, opened=True)
 
 
 @router.post("/open", response_model=Dict[str, Any])
