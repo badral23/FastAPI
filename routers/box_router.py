@@ -1,6 +1,6 @@
 from typing import Dict, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -45,41 +45,6 @@ async def open_box(
     else:
         # Open next available box
         return BoxOpeningService.open_next_available_box(current_user, db)
-
-
-@router.get("/my-owned", response_model=Dict[str, Any])
-# Changed endpoint from /my-opened to /my-owned
-async def get_my_owned_boxes(
-        limit: int = Query(50, ge=1, le=100, description="Number of boxes to return"),
-        # Limit results per page
-        offset: int = Query(0, ge=0, description="Number of boxes to skip"),
-        # Offset for pagination
-        current_user: User = Depends(get_current_user),
-        db: Session = Depends(get_db)
-):
-    """
-    Get list of boxes owned by the authenticated user with pagination.
-    (Changed from opened boxes to owned boxes)
-
-    Args:
-        limit: Maximum number of boxes to return (1-100)
-        offset: Number of boxes to skip for pagination
-
-    Returns:
-        Paginated list of owned boxes with full reward details
-    """
-    result = BoxOpeningService.get_user_owned_boxes(current_user, db, limit, offset)
-    # Changed method call
-
-    # Add user info to response
-    result["user"] = {
-        "id": current_user.id,
-        "wallet_address": current_user.wallet_address,
-        "total_boxes_owned": result["total_owned"]
-        # Changed from total_boxes_opened
-    }
-
-    return result
 
 
 @router.get("/position/{position}")
@@ -173,6 +138,7 @@ async def get_box_by_position(
     except Exception as e:
         # Handle other errors
         raise HTTPException(status_code=500, detail="Error retrieving box information")
+
 
 @router.get("/stats", response_model=BoxStatsResponse)
 async def get_box_opening_stats(db: Session = Depends(get_db)):

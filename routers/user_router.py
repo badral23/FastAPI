@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Dict, Any
 
 from fastapi import Depends, HTTPException, status, APIRouter
 from pydantic import BaseModel
@@ -10,6 +10,7 @@ from handlers.auth_handlers import get_current_user
 from handlers.nft_handlers import check_user_nfts
 from models import User, UserNFT, SupportedNFTCollection, UserSocial
 from schemas import UserSchema, UserNFTSchema, UserSocialSchema
+from services import BoxOpeningService
 
 router = APIRouter()
 
@@ -17,6 +18,10 @@ router = APIRouter()
 class SocialRequest(BaseModel):
     platform: str
     handle: str = None
+
+
+class BoxOpenRequest(BaseModel):
+    id: int
 
 
 @router.get("/me", response_model=UserSchema)
@@ -196,3 +201,73 @@ async def add_social(
         content={"message": f"{social.platform.capitalize()} handle added successfully!"},
         status_code=status.HTTP_201_CREATED
     )
+
+
+@router.post("/twitter")
+async def add_twitter(
+        social: SocialRequest,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
+    valid_platforms = ["twitter"]
+
+    existing_social = db.query(UserSocial).filter(
+        UserSocial.user_id == current_user.id,
+        UserSocial.platform == social.platform
+    ).first()
+
+    if existing_social:
+        return JSONResponse(
+            content={"message": f"{social.platform.capitalize()} handle is already connected."},
+            status_code=status.HTTP_409_CONFLICT
+        )
+
+    new_social = UserSocial(
+        user_id=current_user.id,
+        platform=social.platform,
+        handle=social.handle
+    )
+    db.add(new_social)
+    db.commit()
+
+    connected_socials = db.query(UserSocial).filter(
+        UserSocial.user_id == current_user.id,
+        UserSocial.platform.in_(valid_platforms)
+    ).count()
+
+    if connected_socials == 3:
+        current_user.key_count += 1
+        db.commit()
+
+        return JSONResponse(
+            content={"message": f"Congratulations! All three socials are now connected! You’ve earned 1 key."},
+            status_code=status.HTTP_200_OK
+        )
+
+    return JSONResponse(
+        content={"message": f"{social.platform.capitalize()} handle added successfully!"},
+        status_code=status.HTTP_201_CREATED
+    )
+
+
+@router.get("/my-owned", response_model=Dict[str, Any])
+async def get_my_owned_boxes(
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
+    return BoxOpeningService.get_user_owned_boxes(current_user, db)
+
+
+@router.post("/open", response_model=Dict[str, Any])
+async def open_box(
+        request: BoxOpenRequest,
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
+    if current_user.key_count <= 0:
+        raise HTTPException(
+            status_code=403,
+            detail="You don't have any keys to open boxes. Complete social tasks or verify NFT ownership to earn keys."
+        )
+
+    return BoxOpeningService.open_specific_box(current_user, request.box_position, db)

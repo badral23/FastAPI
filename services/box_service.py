@@ -17,55 +17,39 @@ class BoxOpeningService:
 
     @staticmethod
     def open_next_available_box(user: User, db: Session) -> Dict[str, Any]:
-        """
-        Open the next available box in sequential order
-        """
         try:
-            # Use atomic operation to get and open next box
             box = db.query(Box).filter(
                 Box.is_opened == False,
                 Box.deleted == False
-            ).order_by(Box.position).with_for_update().first()
-            # Lock row to prevent race conditions
+            ).order_by(Box.id).with_for_update().first()
 
             if not box:
-                # No boxes available
                 raise HTTPException(
                     status_code=404,
                     detail="No boxes available to open"
                 )
 
-            # Open the box atomically
-            box.open_box(db, user.id)
+            box.is_opened = True
 
-            # Deduct one key from user's key count
             user.key_count -= 1
-            # Save user with updated key count
             user.save(db)
 
-            # Commit the transaction
             db.commit()
+            db.refresh(box)
+            db.refresh(user)
 
-            logger.info(f"User {user.id} opened box {box.position}, keys remaining: {user.key_count}")
+            logger.info(f"User {user.id} opened box {box.id}, keys remaining: {user.key_count}")
 
             return {
                 "success": True,
                 "box": {
                     "id": box.id,
-                    "position": box.position,
                     "reward_type": box.reward_type,
                     "reward_tier": box.reward_tier,
                     "reward_data": box.reward_data,
                     "reward_description": box.reward_description,
-                    "opened_at": box.opened_at.isoformat()
                 },
-                "user": {
-                    "id": user.id,
-                    "wallet_address": user.wallet_address,
-                    "keys_remaining": user.key_count
-                    # Show remaining keys after opening
-                },
-                "message": f"🎉 Box #{box.position} opened! {box.reward_description}. You have {user.key_count} keys remaining."
+                "message": f"🎉 Box #{box.id} opened! {box.reward_description}. You have {user.key_count} keys remaining."
             }
 
         except HTTPException:
@@ -81,78 +65,39 @@ class BoxOpeningService:
             raise HTTPException(status_code=500, detail="Error opening box")
 
     @staticmethod
-    def open_specific_box(user: User, box_position: int, db: Session) -> Dict[str, Any]:
-        """
-        Open a specific box by position (if available)
-        """
+    def open_specific_box(user: User, box_id: int, db: Session) -> Dict[str, Any]:
         try:
-            # Validate position
-            if box_position < 1 or box_position > 50000:
-                # Invalid position range
-                raise HTTPException(
-                    status_code=400,
-                    detail="Invalid box position. Must be between 1 and 50000"
-                )
-
-            # Get specific box with atomic lock
             box = db.query(Box).filter(
-                Box.position == box_position,
+                Box.id == box_id,
+                Box.owned_by_user_id == user.id,
                 Box.is_opened == False,
                 Box.deleted == False
             ).with_for_update().first()
-            # Lock to prevent concurrent opening
 
             if not box:
-                # Check if box exists but is already opened
-                existing_box = db.query(Box).filter(
-                    Box.position == box_position,
-                    Box.deleted == False
-                ).first()
+                raise ValueError("Box not found or already opened")
 
-                if not existing_box:
-                    # Box doesn't exist
-                    raise HTTPException(
-                        status_code=404,
-                        detail=f"Box #{box_position} not found"
-                    )
-                else:
-                    # Box already opened
-                    raise HTTPException(
-                        status_code=409,
-                        detail=f"Box #{box_position} has already been opened"
-                    )
+            box.is_opened = True
 
-            # Open the box
-            box.open_box(db, user.id)
-
-            # Deduct one key from user's key count
             user.key_count -= 1
-            # Save user with updated key count
             user.save(db)
 
-            # Commit changes
             db.commit()
+            db.refresh(box)
+            db.refresh(user)
 
-            logger.info(f"User {user.id} opened specific box {box_position}, keys remaining: {user.key_count}")
+            logger.info(f"User {user.id} opened specific box {box_id}, keys remaining: {user.key_count}")
 
             return {
                 "success": True,
                 "box": {
                     "id": box.id,
-                    "position": box.position,
                     "reward_type": box.reward_type,
                     "reward_tier": box.reward_tier,
                     "reward_data": box.reward_data,
                     "reward_description": box.reward_description,
-                    "opened_at": box.opened_at.isoformat()
                 },
-                "user": {
-                    "id": user.id,
-                    "wallet_address": user.wallet_address,
-                    "keys_remaining": user.key_count
-                    # Show remaining keys
-                },
-                "message": f"🎉 Box #{box.position} opened! {box.reward_description}. You have {user.key_count} keys remaining."
+                "message": f"🎉 Box #{box.id} opened! {box.reward_description}. You have {user.key_count} keys remaining."
             }
 
         except HTTPException:
@@ -168,53 +113,49 @@ class BoxOpeningService:
             raise HTTPException(status_code=500, detail="Error opening specific box")
 
     @staticmethod
-    def get_user_owned_boxes(user: User, db: Session, limit: int = 50, offset: int = 0) -> Dict[str, Any]:
-        """
-        Get boxes that user owns with pagination (changed from get_user_opened_boxes)
-        """
+    def get_user_owned_boxes(user: User, db: Session) -> Dict[str, Any]:
         try:
-            # Get owned boxes with pagination
             boxes = db.query(Box).filter(
                 Box.owned_by_user_id == user.id,
-                Box.is_opened == True,
                 Box.deleted == False
-            ).order_by(Box.opened_at.desc()).offset(offset).limit(limit).all()
+            ).order_by(Box.opened_at.desc()).all()
 
-            # Get total count for pagination
             total_count = db.query(Box).filter(
                 Box.owned_by_user_id == user.id,
-                Box.is_opened == True,
                 Box.deleted == False
             ).count()
 
             boxes_data = []
-            # Build response data
             for box in boxes:
                 box_data = {
                     "id": box.id,
-                    "position": box.position,
-                    "reward_type": box.reward_type,
-                    "reward_tier": box.reward_tier,
-                    "reward_data": box.reward_data,
-                    "reward_description": box.reward_description,
                     "opened_at": box.opened_at.isoformat() if box.opened_at else None
                 }
+
+                if box.is_opened:
+                    box_data.update({
+                        "reward_type": box.reward_type,
+                        "reward_tier": box.reward_tier,
+                        "reward_data": box.reward_data,
+                        "reward_description": box.reward_description
+                    })
+                else:
+                    box_data.update({
+                        "reward_type": None,
+                        "reward_tier": None,
+                        "reward_data": None,
+                        "reward_description": None
+                    })
+
                 boxes_data.append(box_data)
 
             return {
                 "boxes": boxes_data,
                 "total_owned": total_count,
-                # Changed from total_opened
-                "pagination": {
-                    "limit": limit,
-                    "offset": offset,
-                    "has_more": (offset + limit) < total_count
-                }
             }
 
         except Exception as e:
             logger.error(f"Error getting owned boxes for user {user.id}: {e}")
-            # Changed error message
             raise HTTPException(status_code=500, detail="Error retrieving owned boxes")
 
     @staticmethod
