@@ -270,4 +270,4 @@ async def open_box(
             detail="You don't have any keys to open boxes. Complete social tasks or verify NFT ownership to earn keys."
         )
 
-    return BoxOpeningService.open_specific_box(current_user, request.box_position, db)
+    return BoxOpeningService.open_specific_box(current_user, request.id, db)

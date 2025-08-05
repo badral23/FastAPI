@@ -1,9 +1,12 @@
 # Complete models.py - Replace your models.py with this
 
 from datetime import datetime, timezone
+
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Index, ForeignKey, JSON, Text
-from sqlalchemy.orm import Session, declared_attr, relationship
+from sqlalchemy.orm import Session, declared_attr
+
 from database import Base
+
 
 # Your existing base model classes (keep these as they are)
 class BaseModelC(Base):
@@ -159,11 +162,9 @@ class UserSocial(BaseModelC):
     platform = Column(String)
     handle = Column(String)
 
-class Box(BaseModelC):
-    __tablename__ = "boxes"
 
-    position = Column(Integer, unique=True, nullable=False)
-    # 1 to 50,000
+class Box(BaseModelCU):
+    __tablename__ = "boxes"
     reward_type = Column(String, nullable=False)
     # "standard_nft", "apecoin", "rare_nft", "apefest_ticket"
     reward_tier = Column(String, nullable=True)
@@ -179,21 +180,13 @@ class Box(BaseModelC):
     owned_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     # User who owns the box after opening (changed from opened_by_user_id)
     opened_at = Column(DateTime, nullable=True)
+
     # When box was opened
 
     @classmethod
     def get_next_available_box(cls, db: Session):
         """Get the next available (unopened) box in sequential order"""
         return db.query(cls).filter(
-            cls.is_opened == False,
-            cls.deleted == False
-        ).order_by(cls.position).first()
-
-    @classmethod
-    def get_unopened_box_by_position(cls, db: Session, position: int):
-        """Get an unopened box by specific position"""
-        return db.query(cls).filter(
-            cls.position == position,
             cls.is_opened == False,
             cls.deleted == False
         ).first()
@@ -223,7 +216,7 @@ class Box(BaseModelC):
         """Open this box and assign ownership to user"""
         if self.is_opened:
             # Box already opened
-            raise ValueError(f"Box #{self.position} has already been opened")
+            raise ValueError(f"Box #{self.id} has already been opened")
 
         self.is_opened = True
         # Set who owns the box after opening (changed from opened_by_user_id)

@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from typing import Optional, Dict, Any, List
+
 from pydantic import BaseModel
 
 
@@ -95,8 +96,6 @@ class UserNFTSchema(Base):
 
 # Box schemas
 class BoxCreateSchema(BaseCreate):
-    position: int
-    # Box position (1-50000)
     reward_type: str
     # Type of reward
     reward_tier: Optional[str] = None
@@ -110,9 +109,6 @@ class BoxCreateSchema(BaseCreate):
 # Update Box schema to use owned_by instead of opened_by
 class BoxSchema(Base):
     id: int
-    # Box ID
-    position: int
-    # Box position (1-50000)
     reward_type: str
     # Type of reward
     reward_tier: Optional[str] = None
@@ -131,12 +127,6 @@ class BoxSchema(Base):
     # When box was created
     deleted: bool
     # Soft delete flag
-
-
-# Box operation schemas
-class BoxOpenRequest(BaseCreate):
-    box_position: Optional[int] = None
-    # If None, opens next available box; if specified, opens that specific box
 
 
 class BoxOpenResponse(Base):
@@ -226,8 +216,6 @@ class OwnedBoxSchema(Base):
     """Schema for a single owned box (changed from OpenedBoxSchema)"""
     id: int
     # Box ID
-    position: int
-    # Box position
     reward_type: str
     # Reward type
     reward_tier: Optional[str] = None
@@ -248,6 +236,7 @@ class UserOwnedBoxesResponseSchema(Base):
     # Pagination info
     user: Dict[str, Any]
     # User information
+
 
 class NextBoxResponseSchema(Base):
     """Response schema for next available box info"""
@@ -278,7 +267,6 @@ class UserWithBoxesSchema(Base):
     # Soft delete flag
     total_owned_boxes: Optional[int] = 0
     # Number of boxes user owns (changed from total_opened_boxes)
-
 
 # REMOVED: All assignment-related schemas since we removed that functionality
 # - BoxAssignmentRequest
