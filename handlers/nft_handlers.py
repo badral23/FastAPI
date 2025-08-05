@@ -85,27 +85,36 @@ async def listen_for_events(db: Session):
     if not w3.is_connected():
         print("Web3 provider not connected. Check APECHAIN_RPC_URL.")
         return
+
     print(f"Connected to Web3 provider, latest block: {w3.eth.block_number}")
     print(f"Listening for events on contract: {CONTRACT_ADDRESS} and receiver: {RECEIVER_ADDRESS}")
+
     last_processed_block = w3.eth.block_number
     event_filter = contract.events.Transfer.create_filter(from_block=last_processed_block)
+
     while True:
         try:
             current_block = w3.eth.block_number
             print(f"Current block: {current_block}")
+
+            # Fetch new events
             new_entries = event_filter.get_new_entries()
             print(f"Checked for new entries, found: {len(new_entries)}")
+
             if new_entries:
                 for event in new_entries:
                     try:
                         print(f"Raw event data: {event}")
                         from_address = event['args']['from']
                         to_address = event['args']['to']
+
                         if w3.to_checksum_address(to_address) == w3.to_checksum_address(RECEIVER_ADDRESS):
                             print(f"Transfer event to receiver detected: {event}")
+
                             user = get_user_by_wallet_address(from_address, db)
+                            box = BoxOpeningService.get_box_by_box_id(event['args']['tokenId'], db)
+
                             if user:
-                                box = BoxOpeningService.get_box_by_box_id(event['args']['tokenId'], db)
                                 if box:
                                     BoxOpeningService.update_box_ownership(box, user.id, db)
                                 else:
@@ -114,14 +123,25 @@ async def listen_for_events(db: Session):
                                 user = User(wallet_address=from_address)
                                 db.add(user)
                                 db.commit()
-                                db.refresh(user)
+
+                                if box:
+                                    box.owned_by_user_id = user.id
+                                    db.commit()
+                                    db.refresh(user)
+                                    db.refresh(box)
+                                else:
+                                    print(f"No box found for tokenId: {event['args']['tokenId']}")
+
                     except Exception as e:
                         print(f"Error processing event {event}: {e}")
+
             if current_block > last_processed_block + 100:
                 last_processed_block = current_block
                 event_filter = contract.events.Transfer.create_filter(from_block=last_processed_block)
                 print(f"Refreshed event filter at block {last_processed_block}")
+
             await asyncio.sleep(2)
+
         except Exception as e:
             print(f"Error in event listener: {e}")
             event_filter = contract.events.Transfer.create_filter(from_block=last_processed_block)
