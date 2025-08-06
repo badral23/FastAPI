@@ -203,53 +203,6 @@ async def add_social(
     )
 
 
-@router.post("/twitter")
-async def add_twitter(
-        social: SocialRequest,
-        db: Session = Depends(get_db),
-        current_user: User = Depends(get_current_user)
-):
-    valid_platforms = ["twitter"]
-
-    existing_social = db.query(UserSocial).filter(
-        UserSocial.user_id == current_user.id,
-        UserSocial.platform == social.platform
-    ).first()
-
-    if existing_social:
-        return JSONResponse(
-            content={"message": f"{social.platform.capitalize()} handle is already connected."},
-            status_code=status.HTTP_409_CONFLICT
-        )
-
-    new_social = UserSocial(
-        user_id=current_user.id,
-        platform=social.platform,
-        handle=social.handle
-    )
-    db.add(new_social)
-    db.commit()
-
-    connected_socials = db.query(UserSocial).filter(
-        UserSocial.user_id == current_user.id,
-        UserSocial.platform.in_(valid_platforms)
-    ).count()
-
-    if connected_socials == 3:
-        current_user.key_count += 1
-        db.commit()
-
-        return JSONResponse(
-            content={"message": f"Congratulations! All three socials are now connected! You’ve earned 1 key."},
-            status_code=status.HTTP_200_OK
-        )
-
-    return JSONResponse(
-        content={"message": f"{social.platform.capitalize()} handle added successfully!"},
-        status_code=status.HTTP_201_CREATED
-    )
-
-
 @router.get("/my-owned", response_model=Dict[str, Any])
 async def get_my_owned_boxes(
         current_user: User = Depends(get_current_user),
